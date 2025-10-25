@@ -1,0 +1,1751 @@
+"""Main IPython class."""
+
+#-----------------------------------------------------------------------------
+#  Copyright (C) 2001 Janko Hauser <jhauser@zscout.de>
+#  Copyright (C) 2001-2007 Fernando Perez. <fperez@colorado.edu>
+#  Copyright (C) 2008-2011  The IPython Development Team
+#
+#  Distributed under the terms of the BSD License.  The full license is in
+#  the file COPYING, distributed as part of this software.
+#-----------------------------------------------------------------------------
+
+
+import abc
+import ast
+import atexit
+import bdb
+import builtins as builtin_mod
+import functools
+import inspect
+import os
+import re
+import runpy
+import shutil
+import subprocess
+import sys
+import tempfile
+import traceback
+import types
+import warnings
+from ast import stmt
+from contextlib import contextmanager
+from io import open as io_open
+from logging import error
+from pathlib import Path
+from typing import Callable
+from typing import List as ListType, Any as AnyType
+from typing import Literal, Optional, Sequence, Tuple
+from warnings import warn
+
+from IPython.external.pickleshare import PickleShareDB
+
+from tempfile import TemporaryDirectory
+from traitlets import (
+    Any,
+    Bool,
+    CaselessStrEnum,
+    Dict,
+    Enum,
+    Instance,
+    Integer,
+    List,
+    Type,
+    Unicode,
+    default,
+    observe,
+    validate,
+)
+from traitlets.config.configurable import SingletonConfigurable
+from traitlets.utils.importstring import import_item
+
+import IPython.core.hooks
+from IPython.core import magic, oinspect, page, prefilter, ultratb
+from IPython.core.alias import Alias, AliasManager
+from IPython.core.autocall import ExitAutocall
+from IPython.core.builtin_trap import BuiltinTrap
+from IPython.core.compilerop import CachingCompiler
+from IPython.core.debugger import InterruptiblePdb
+from IPython.core.display_trap import DisplayTrap
+from IPython.core.displayhook import DisplayHook
+from IPython.core.displaypub import DisplayPublisher
+from IPython.core.error import InputRejected, UsageError
+from IPython.core.events import EventManager, available_events
+from IPython.core.extensions import ExtensionManager
+from IPython.core.formatters import DisplayFormatter
+from IPython.core.history import HistoryManager, HistoryOutput
+from IPython.core.inputtransformer2 import ESC_MAGIC, ESC_MAGIC2
+from IPython.core.logger import Logger
+from IPython.core.macro import Macro
+from IPython.core.payload import PayloadManager
+from IPython.core.prefilter import PrefilterManager
+from IPython.core.profiledir import ProfileDir
+from IPython.core.tips import pick_tip
+from IPython.core.usage import default_banner
+from IPython.display import display
+from IPython.paths import get_ipython_dir
+from IPython.testing.skipdoctest import skip_doctest
+from IPython.utils import PyColorize, io, openpy, py3compat
+from IPython.utils.decorators import undoc
+from IPython.utils.io import ask_yes_no
+from IPython.utils.ipstruct import Struct
+from IPython.utils.path import ensure_dir_exists, get_home_dir, get_py_filename
+from IPython.utils.process import getoutput, system
+from IPython.utils.strdispatch import StrDispatch
+from IPython.utils.syspathcontext import prepended_to_syspath
+from IPython.utils.text import DollarFormatter, LSString, SList, format_screen
+from IPython.core.oinspect import OInfo
+
+
+sphinxify: Optional[Callable]
+
+try:
+    import docrepr.sphinxify as sphx
+
+    def sphinxify(oinfo):
+        wrapped_docstring = sphx.wrap_main_docstring(oinfo)
+
+        def sphinxify_docstring(docstring):
+            with TemporaryDirectory() as dirname:
+                return {
+                    "text/html": sphx.sphinxify(wrapped_docstring, dirname),
+                    "text/plain": docstring,
+                }
+
+        return sphinxify_docstring
+except ImportError:
+    sphinxify = None
+
+
+class ProvisionalWarning(DeprecationWarning):
+    """
+    Warning class for unstable features
+    """
+    pass
+
+from ast import Module
+
+_assign_nodes = (ast.AugAssign, ast.AnnAssign, ast.Assign)
+_single_targets_nodes = (ast.AugAssign, ast.AnnAssign)
+
+#-----------------------------------------------------------------------------
+# Await Helpers
+#-----------------------------------------------------------------------------
+
+# we still need to run things using the asyncio eventloop, but there is no
+# async integration
+from .async_helpers import (
+    _asyncio_runner,
+    _curio_runner,
+    _pseudo_sync_runner,
+    _should_be_async,
+    _trio_runner,
+)
+
+#-----------------------------------------------------------------------------
+# Globals
+#-----------------------------------------------------------------------------
+
+# compiled regexps for autoindent management
+dedent_re = re.compile(r'^\s+raise|^\s+return|^\s+pass')
+
+#-----------------------------------------------------------------------------
+# Utilities
+#-----------------------------------------------------------------------------
+
+
+def is_integer_string(s: str):
+    """
+    Variant of "str.isnumeric()" that allow negative values and other ints.
+    """
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+    raise ValueError("Unexpected error")
+
+
+@undoc
+def softspace(file, newvalue):
+    """Copied from code.py, to remove the dependency"""
+
+    oldvalue = 0
+    try:
+        oldvalue = file.softspace
+    except AttributeError:
+        pass
+    try:
+        file.softspace = newvalue
+    except (AttributeError, TypeError):
+        # "attribute-less object" or "read-only attributes"
+        pass
+    return oldvalue
+
+@undoc
+def no_op(*a, **kw):
+    pass
+
+
+class SpaceInInput(Exception): pass
+
+
+class SeparateUnicode(Unicode):
+    r"""A Unicode subclass to validate separate_in, separate_out, etc.
+
+    This is a Unicode based trait that converts '0'->'' and ``'\\n'->'\n'``.
+    """
+
+    def validate(self, obj, value):
+        if value == '0': value = ''
+        value = value.replace('\\n','\n')
+        return super(SeparateUnicode, self).validate(obj, value)
+
+
+class _IPythonMainModuleBase(types.ModuleType):
+    def __init__(self) -> None:
+        super().__init__(
+            "__main__",
+            doc="Automatically created module for the IPython interactive environment",
+        )
+
+
+def make_main_module_type(user_ns: dict[str, Any]) -> type[_IPythonMainModuleBase]:
+    @undoc
+    class IPythonMainModule(_IPythonMainModuleBase):
+        """
+        ModuleType that supports passing in a custom user namespace dictionary,
+        to be used for the module's __dict__. This is enabled by shadowing the
+        underlying __dict__ attribute of the module, and overriding getters and
+        setters to point to the custom user namespace dictionary.
+        The reason to do this is to allow the __main__ module to be an instance
+        of ModuleType, while still allowing the user namespace to be custom.
+        """
+
+        @property
+        def __dict__(self) -> dict[str, Any]:  # type: ignore[override]
+            return user_ns
+
+        def __setattr__(self, item: str, value: Any) -> None:
+            if item == "__dict__":
+                # Ignore this when IPython tries to set it, since we already provide it
+                return
+            user_ns[item] = value
+
+        def __getattr__(self, item: str) -> Any:
+            try:
+                return user_ns[item]
+            except KeyError:
+                raise AttributeError(f"module {self.__name__} has no attribute {item}")
+
+        def __delattr__(self, item: str) -> None:
+            try:
+                del user_ns[item]
+            except KeyError:
+                raise AttributeError(f"module {self.__name__} has no attribute {item}")
+
+    return IPythonMainModule
+
+
+class ExecutionInfo:
+    """The arguments used for a call to :meth:`InteractiveShell.run_cell`
+
+    Stores information about what is going to happen.
+    """
+    raw_cell = None
+    transformed_cell = None
+    store_history = False
+    silent = False
+    shell_futures = True
+    cell_id = None
+
+    def __init__(
+        self,
+        raw_cell,
+        store_history,
+        silent,
+        shell_futures,
+        cell_id,
+        transformed_cell=None,
+    ):
+        self.raw_cell = raw_cell
+        self.transformed_cell = transformed_cell
+        self.store_history = store_history
+        self.silent = silent
+        self.shell_futures = shell_futures
+        self.cell_id = cell_id
+
+    def __repr__(self):
+        name = self.__class__.__qualname__
+        raw_cell = (
+            (self.raw_cell[:50] + "..") if len(self.raw_cell) > 50 else self.raw_cell
+        )
+        transformed_cell = (
+            (self.transformed_cell[:50] + "..")
+            if self.transformed_cell and len(self.transformed_cell) > 50
+            else self.transformed_cell
+        )
+        return (
+            '<%s object at %x, raw_cell="%s" transformed_cell="%s" store_history=%s silent=%s shell_futures=%s cell_id=%s>'
+            % (
+                name,
+                id(self),
+                raw_cell,
+                transformed_cell,
+                self.store_history,
+                self.silent,
+                self.shell_futures,
+                self.cell_id,
+            )
+        )
+
+
+class ExecutionResult:
+    """The result of a call to :meth:`InteractiveShell.run_cell`
+
+    Stores information about what took place.
+    """
+
+    execution_count: Optional[int] = None
+    error_before_exec: Optional[BaseException] = None
+    error_in_exec: Optional[BaseException] = None
+    info = None
+    result = None
+
+    def __init__(self, info):
+        self.info = info
+
+    @property
+    def success(self):
+        return (self.error_before_exec is None) and (self.error_in_exec is None)
+
+    def raise_error(self):
+        """Reraises error if `success` is `False`, otherwise does nothing"""
+        if self.error_before_exec is not None:
+            raise self.error_before_exec
+        if self.error_in_exec is not None:
+            raise self.error_in_exec
+
+    def __repr__(self):
+        name = self.__class__.__qualname__
+        return '<%s object at %x, execution_count=%s error_before_exec=%s error_in_exec=%s info=%s result=%s>' %\
+                (name, id(self), self.execution_count, self.error_before_exec, self.error_in_exec, repr(self.info), repr(self.result))
+
+
+@functools.wraps(io_open)
+def _modified_open(file, *args, **kwargs):
+    if file in {0, 1, 2}:
+        raise ValueError(
+            f"IPython won't let you open fd={file} by default "
+            "as it is likely to crash IPython. If you know what you are doing, "
+            "you can use builtins' open."
+        )
+
+    return io_open(file, *args, **kwargs)
+
+
+class InteractiveShell(SingletonConfigurable):
+    """An enhanced, interactive shell for Python."""
+
+    _instance = None
+    _user_ns: dict
+    _sys_modules_keys: set[str]
+
+    inspector: oinspect.Inspector
+
+    ast_transformers: List[ast.NodeTransformer] = List(
+        [],
+        help="""
+        A list of ast.NodeTransformer subclass instances, which will be applied
+        to user input before code is run.
+        """,
+    ).tag(config=True)
+
+    autocall = Enum((0,1,2), default_value=0, help=
+        """
+        Make IPython automatically call any callable object even if you didn't
+        type explicit parentheses. For example, 'str 43' becomes 'str(43)'
+        automatically. The value can be '0' to disable the feature, '1' for
+        'smart' autocall, where it is not applied if there are no more
+        arguments on the line, and '2' for 'full' autocall, where all callable
+        objects are automatically called (even if no arguments are present).
+        """
+    ).tag(config=True)
+
+    autoindent = Bool(True, help=
+        """
+        Autoindent IPython code entered interactively.
+        """
+    ).tag(config=True)
+
+    autoawait = Bool(True, help=
+        """
+        Automatically run await statement in the top level repl.
+        """
+    ).tag(config=True)
+
+    loop_runner_map ={
+        'asyncio':(_asyncio_runner, True),
+        'curio':(_curio_runner, True),
+        'trio':(_trio_runner, True),
+        'sync': (_pseudo_sync_runner, False)
+    }
+
+    loop_runner = Any(default_value="IPython.core.interactiveshell._asyncio_runner",
+        allow_none=True,
+        help="""Select the loop runner that will be used to execute top-level asynchronous code"""
+    ).tag(config=True)
+
+    @default('loop_runner')
+    def _default_loop_runner(self):
+        return import_item("IPython.core.interactiveshell._asyncio_runner")
+
+    @validate('loop_runner')
+    def _import_runner(self, proposal):
+        if isinstance(proposal.value, str):
+            if proposal.value in self.loop_runner_map:
+                runner, autoawait = self.loop_runner_map[proposal.value]
+                self.autoawait = autoawait
+                return runner
+            runner = import_item(proposal.value)
+            if not callable(runner):
+                raise ValueError('loop_runner must be callable')
+            return runner
+        if not callable(proposal.value):
+            raise ValueError('loop_runner must be callable')
+        return proposal.value
+
+    automagic = Bool(True, help=
+        """
+        Enable magic commands to be called without the leading %.
+        """
+    ).tag(config=True)
+
+    enable_tip = Bool(
+        True,
+        help="""
+        Set to show a tip when IPython starts.""",
+    ).tag(config=True)
+
+    banner1 = Unicode(default_banner,
+        help="""The part of the banner to be printed before the profile"""
+    ).tag(config=True)
+    banner2 = Unicode('',
+        help="""The part of the banner to be printed after the profile"""
+    ).tag(config=True)
+
+    cache_size = Integer(
+        1000,
+        help="""
+        Set the size of the output cache.  The default is 1000, you can
+        change it permanently in your config file.  Setting it to 0 completely
+        disables the caching system, and the minimum value accepted is 3 (if
+        you provide a value less than 3, it is reset to 0 and a warning is
+        issued).  This limit is defined because otherwise you'll spend more
+        time re-flushing a too small cache than working
+        """,
+    ).tag(config=True)
+    debug = Bool(False).tag(config=True)
+    display_formatter = Instance(DisplayFormatter, allow_none=True)
+    displayhook_class = Type(DisplayHook)
+    display_pub_class = Type(DisplayPublisher)
+    compiler_class = Type(CachingCompiler)
+    inspector_class = Type(
+        oinspect.Inspector, help="Class to use to instantiate the shell inspector"
+    ).tag(config=True)
+
+    sphinxify_docstring = Bool(False, help=
+        """
+        Enables rich html representation of docstrings. (This requires the
+        docrepr module).
+        """).tag(config=True)
+
+    @observe("sphinxify_docstring")
+    def _sphinxify_docstring_changed(self, change):
+        if change['new']:
+            warn("`sphinxify_docstring` is provisional since IPython 5.0 and might change in future versions." , ProvisionalWarning)
+
+    enable_html_pager = Bool(False, help=
+        """
+        (Provisional API) enables html representation in mime bundles sent
+        to pagers.
+        """).tag(config=True)
+
+    @observe("enable_html_pager")
+    def _enable_html_pager_changed(self, change):
+        if change['new']:
+            warn("`enable_html_pager` is provisional since IPython 5.0 and might change in future versions.", ProvisionalWarning)
+
+    data_pub_class = None
+
+    exit_now = Bool(False)
+    exiter = Instance(ExitAutocall)
+    @default('exiter')
+    def _exiter_default(self):
+        return ExitAutocall(self)
+    # Monotonically increasing execution counter
+    execution_count = Integer(1)
+    filename = Unicode("<ipython console>")
+    ipython_dir = Unicode("").tag(config=True)  # Set to get_ipython_dir() in __init__
+
+    # Used to transform cells before running them, and check whether code is complete
+    input_transformer_manager = Instance('IPython.core.inputtransformer2.TransformerManager',
+                                         ())
+
+    @property
+    def input_transformers_cleanup(self):
+        return self.input_transformer_manager.cleanup_transforms
+
+    input_transformers_post: List = List(
+        [],
+        help="A list of string input transformers, to be applied after IPython's "
+             "own input transformations."
+    )
+
+    logstart = Bool(False, help=
+        """
+        Start logging to the default log file in overwrite mode.
+        Use `logappend` to specify a log file to **append** logs to.
+        """
+    ).tag(config=True)
+    logfile = Unicode('', help=
+        """
+        The name of the logfile to use.
+        """
+    ).tag(config=True)
+    logappend = Unicode('', help=
+        """
+        Start logging to the given file in append mode.
+        Use `logfile` to specify a log file to **overwrite** logs to.
+        """
+    ).tag(config=True)
+    object_info_string_level = Enum((0,1,2), default_value=0,
+    ).tag(config=True)
+    pdb = Bool(False, help=
+        """
+        Automatically call the pdb debugger after every exception.
+        """
+    ).tag(config=True)
+    display_page = Bool(False,
+        help="""If True, anything that would be passed to the pager
+        will be displayed as regular output instead."""
+    ).tag(config=True)
+
+
+    show_rewritten_input = Bool(True,
+        help="Show rewritten input, e.g. for autocall."
+    ).tag(config=True)
+
+    quiet = Bool(False).tag(config=True)
+
+    history_length = Integer(10000,
+        help='Total length of command history'
+    ).tag(config=True)
+
+    history_load_length = Integer(1000, help=
+        """
+        The number of saved history entries to be loaded
+        into the history buffer at startup.
+        """
+    ).tag(config=True)
+
+    ast_node_interactivity = Enum(['all', 'last', 'last_expr', 'none', 'last_expr_or_assign'],
+                                  default_value='last_expr',
+                                  help="""
+        'all', 'last', 'last_expr' or 'none', 'last_expr_or_assign' specifying
+        which nodes should be run interactively (displaying output from expressions).
+        """
+    ).tag(config=True)
+
+    warn_venv = Bool(
+        True,
+        help="Warn if running in a virtual environment with no IPython installed (so IPython from the global environment is used).",
+    ).tag(config=True)
+
+    # TODO: this part of prompt management should be moved to the frontends.
+    # Use custom TraitTypes that convert '0'->'' and '\\n'->'\n'
+    separate_in = SeparateUnicode('\n').tag(config=True)
+    separate_out = SeparateUnicode('').tag(config=True)
+    separate_out2 = SeparateUnicode('').tag(config=True)
+    wildcards_case_sensitive = Bool(True).tag(config=True)
+    xmode = CaselessStrEnum(
+        ("Context", "Plain", "Verbose", "Minimal", "Docs"),
+        default_value="Context",
+        help="Switch modes for the IPython exception handlers.",
+    ).tag(config=True)
+
+    # Subcomponents of InteractiveShell
+    alias_manager = Instance("IPython.core.alias.AliasManager", allow_none=True)
+    prefilter_manager = Instance(
+        "IPython.core.prefilter.PrefilterManager", allow_none=True
+    )
+    builtin_trap = Instance("IPython.core.builtin_trap.BuiltinTrap")
+    display_trap = Instance("IPython.core.display_trap.DisplayTrap")
+    extension_manager = Instance(
+        "IPython.core.extensions.ExtensionManager", allow_none=True
+    )
+    payload_manager = Instance("IPython.core.payload.PayloadManager", allow_none=True)
+    history_manager = Instance(
+        "IPython.core.history.HistoryAccessorBase", allow_none=True
+    )
+    magics_manager = Instance("IPython.core.magic.MagicsManager")
+
+    profile_dir = Instance('IPython.core.application.ProfileDir', allow_none=True)
+    @property
+    def profile(self):
+        if self.profile_dir is not None:
+            name = os.path.basename(self.profile_dir.location)
+            return name.replace('profile_','')
+
+
+    # Private interface
+    _post_execute = Dict()
+
+    # Tracks any GUI loop loaded for pylab
+    pylab_gui_select = None
+
+    last_execution_succeeded = Bool(True, help='Did last executed command succeeded')
+
+    last_execution_result = Instance('IPython.core.interactiveshell.ExecutionResult', help='Result of executing the last command', allow_none=True)
+
+    def __init__(self, ipython_dir=None, profile_dir=None,
+                 user_module=None, user_ns=None,
+                 custom_exceptions=((), None), **kwargs):
+        # This is where traits with a config_key argument are updated
+        # from the values on config.
+        super(InteractiveShell, self).__init__(**kwargs)
+        self.configurables = [self]
+
+        # These are relatively independent and stateless
+        self.init_ipython_dir(ipython_dir)
+        self.init_profile_dir(profile_dir)
+        self.init_instance_attrs()
+        self.init_environment()
+
+        # Check if we're in a virtualenv, and set up sys.path.
+        self.init_virtualenv()
+
+        # Create namespaces (user_ns, user_global_ns, etc.)
+        self.init_create_namespaces(user_module, user_ns)
+        # This has to be done after init_create_namespaces because it uses
+        # something in self.user_ns, but before init_sys_modules, which
+        # is the first thing to modify sys.
+        # TODO: When we override sys.stdout and sys.stderr before this class
+        # is created, we are saving the overridden ones here. Not sure if this
+        # is what we want to do.
+        self.save_sys_module_state()
+        self.init_sys_modules()
+
+        # While we're trying to have each part of the code directly access what
+        # it needs without keeping redundant references to objects, we have too
+        # much legacy code that expects ip.db to exist.
+        self.db = PickleShareDB(os.path.join(self.profile_dir.location, 'db'))
+
+        self.init_history()
+        self.init_encoding()
+        self.init_prefilter()
+
+        self.init_syntax_highlighting()
+        self.init_hooks()
+        self.init_events()
+        self.init_pushd_popd_magic()
+        self.init_user_ns()
+        self.init_logger()
+        self.init_builtins()
+
+        # The following was in post_config_initialization
+        self.raw_input_original = input
+        self.init_completer()
+        # TODO: init_io() needs to happen before init_traceback handlers
+        # because the traceback handlers hardcode the stdout/stderr streams.
+        # This logic in in debugger.Pdb and should eventually be changed.
+        self.init_io()
+        self.init_traceback_handlers(custom_exceptions)
+        self.init_prompts()
+        self.init_display_formatter()
+        self.init_display_pub()
+        self.init_data_pub()
+        self.init_displayhook()
+        self.init_magics()
+        self.init_alias()
+        self.init_logstart()
+        self.init_pdb()
+        self.init_extension_manager()
+        self.init_payload()
+        self.events.trigger('shell_initialized', self)
+        atexit.register(self.atexit_operations)
+
+        # The trio runner is used for running Trio in the foreground thread. It
+        # is different from `_trio_runner(async_fn)` in `async_helpers.py`
+        # which calls `trio.run()` for every cell. This runner runs all cells
+        # inside a single Trio event loop. If used, it is set from
+        # `ipykernel.kernelapp`.
+        self.trio_runner = None
+        self.showing_traceback = False
+
+    @property
+    def user_ns(self):
+        return self._user_ns
+
+    @user_ns.setter
+    def user_ns(self, ns: dict):
+        assert hasattr(ns, "clear")
+        assert isinstance(ns, dict)
+        self._user_ns = ns
+
+    def get_ipython(self):
+        """Return the currently running IPython instance."""
+        return self
+
+    #-------------------------------------------------------------------------
+    # Trait changed handlers
+    #-------------------------------------------------------------------------
+    @observe('ipython_dir')
+    def _ipython_dir_changed(self, change):
+        ensure_dir_exists(change['new'])
+
+    def set_autoindent(self,value=None):
+        """Set the autoindent flag.
+
+        If called with no arguments, it acts as a toggle."""
+        if value is None:
+            self.autoindent = not self.autoindent
+        else:
+            self.autoindent = value
+
+    def set_trio_runner(self, tr):
+        self.trio_runner = tr
+
+    #-------------------------------------------------------------------------
+    # init_* methods called by __init__
+    #-------------------------------------------------------------------------
+
+    def init_ipython_dir(self, ipython_dir):
+        if ipython_dir is not None:
+            self.ipython_dir = ipython_dir
+            return
+
+        self.ipython_dir = get_ipython_dir()
+
+    def init_profile_dir(self, profile_dir):
+        if profile_dir is not None:
+            self.profile_dir = profile_dir
+            return
+        self.profile_dir = ProfileDir.create_profile_dir_by_name(
+            self.ipython_dir, "default"
+        )
+
+    def init_instance_attrs(self):
+        self.more = False
+
+        # command compiler
+        self.compile = self.compiler_class()
+
+        # Make an empty namespace, which extension writers can rely on both
+        # existing and NEVER being used by ipython itself.  This gives them a
+        # convenient location for storing additional information and state
+        # their extensions may require, without fear of collisions with other
+        # ipython names that may develop later.
+        self.meta = Struct()
+
+        # Temporary files used for various purposes.  Deleted at exit.
+        # The files here are stored with Path from Pathlib
+        self.tempfiles = []
+        self.tempdirs = []
+
+        # keep track of where we started running (mainly for crash post-mortem)
+        # This is not being used anywhere currently.
+        self.starting_dir = os.getcwd()
+
+        # Indentation management
+        self.indent_current_nsp = 0
+
+        # Dict to track post-execution functions that have been registered
+        self._post_execute = {}
+
+    def init_environment(self):
+        """Any changes we need to make to the user's environment."""
+        pass
+
+    def init_encoding(self):
+        # Get system encoding at startup time.  Certain terminals (like Emacs
+        # under Win32 have it set to None, and we need to have a known valid
+        # encoding to use in the raw_input() method
+        try:
+            self.stdin_encoding = sys.stdin.encoding or 'ascii'
+        except AttributeError:
+            self.stdin_encoding = 'ascii'
+
+    colors = Unicode(
+        "neutral", help="Set the color scheme (nocolor, neutral, linux, lightbg)."
+    ).tag(config=True)
+
+    @validate("colors")
+    def _check_colors(self, proposal):
+        new = proposal["value"]
+        if not new == new.lower():
+            warn(
+                f"`TerminalInteractiveShell.colors` is now lowercase: `{new.lower()}`,"
+                " non lowercase, may be invalid in the future.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return new.lower()
+
+    @observe("colors")
+    def init_syntax_highlighting(self, changes=None):
+        # Python source parser/formatter for syntax highlighting
+        pyformat = PyColorize.Parser(theme_name=self.colors).format
+        self.pycolorize = lambda src: pyformat(src, "str")
+        if not hasattr(self, "inspector"):
+            self.inspector = self.inspector_class(
+                theme_name=self.colors,
+                str_detail_level=self.object_info_string_level,
+                parent=self,
+            )
+
+        try:
+            # Deprecation in 9.0, colors should always be lower
+            self.inspector.set_theme_name(self.colors.lower())
+        except Exception:
+            warn(
+                "Error changing object inspector color schemes.\n%s"
+                % (sys.exc_info()[1]),
+                stacklevel=2,
+            )
+        if hasattr(self, "InteractiveTB"):
+            self.InteractiveTB.set_theme_name(self.colors)
+        if hasattr(self, "SyntaxTB"):
+            self.SyntaxTB.set_theme_name(self.colors)
+        self.refresh_style()
+
+    def refresh_style(self):
+        # No-op here, used in subclass
+        pass
+
+    def init_pushd_popd_magic(self):
+        # for pushd/popd management
+        self.home_dir = get_home_dir()
+
+        self.dir_stack = []
+
+    def init_logger(self) -> None:
+        self.logger = Logger(self.home_dir, logfname='ipython_log.py',
+                             logmode='rotate')
+
+    def init_logstart(self) -> None:
+        """Initialize logging in case it was requested at the command line.
+        """
+        if self.logappend:
+            self.run_line_magic("logstart", f"{self.logappend} append")
+        elif self.logfile:
+            self.run_line_magic("logstart", self.logfile)
+        elif self.logstart:
+            self.run_line_magic("logstart", "")
+
+    def init_builtins(self):
+        # A single, static flag that we set to True.  Its presence indicates
+        # that an IPython shell has been created, and we make no attempts at
+        # removing on exit or representing the existence of more than one
+        # IPython at a time.
+        builtin_mod.__dict__['__IPYTHON__'] = True
+        builtin_mod.__dict__['display'] = display
+
+        self.builtin_trap = BuiltinTrap(shell=self)
+
+
+    def init_io(self):
+        # implemented in subclasses, TerminalInteractiveShell does call
+        # colorama.init().
+        pass
+
+    def init_prompts(self):
+        # Set system prompts, so that scripts can decide if they are running
+        # interactively.
+        sys.ps1 = 'In : '
+        sys.ps2 = '...: '
+        sys.ps3 = 'Out: '
+
+    def init_display_formatter(self):
+        self.display_formatter = DisplayFormatter(parent=self)
+        self.configurables.append(self.display_formatter)
+
+    def init_display_pub(self):
+        self.display_pub = self.display_pub_class(parent=self, shell=self)
+        self.configurables.append(self.display_pub)
+
+    def init_data_pub(self):
+        if not self.data_pub_class:
+            self.data_pub = None
+            return
+        self.data_pub = self.data_pub_class(parent=self)
+        self.configurables.append(self.data_pub)
+
+    def init_displayhook(self):
+        # Initialize displayhook, set in/out prompts and printing system
+        self.displayhook = self.displayhook_class(
+            parent=self,
+            shell=self,
+            cache_size=self.cache_size,
+        )
+        self.configurables.append(self.displayhook)
+        # This is a context manager that installs/removes the displayhook at
+        # the appropriate time.
+        self.display_trap = DisplayTrap(hook=self.displayhook)
+
+    @staticmethod
+    def get_path_links(p: Path):
+        """Gets path links including all symlinks
+
+        Examples
+        --------
+        In [1]: from IPython.core.interactiveshell import InteractiveShell
+
+        In [2]: import sys, pathlib
+
+        In [3]: paths = InteractiveShell.get_path_links(pathlib.Path(sys.executable))
+
+        In [4]: len(paths) == len(set(paths))
+        Out[4]: True
+
+        In [5]: bool(paths)
+        Out[5]: True
+        """
+        paths = [p]
+        while p.is_symlink():
+            new_path = Path(os.readlink(p))
+            if not new_path.is_absolute():
+                new_path = p.parent / new_path
+            p = new_path
+            paths.append(p)
+        return paths
+
+    def init_virtualenv(self):
+        """Add the current virtualenv to sys.path so the user can import modules from it.
+        This isn't perfect: it doesn't use the Python interpreter with which the
+        virtualenv was built, and it ignores the --no-site-packages option. A
+        warning will appear suggesting the user installs IPython in the
+        virtualenv, but for many cases, it probably works well enough.
+
+        Adapted from code snippets online.
+
+        http://blog.ufsoft.org/2009/1/29/ipython-and-virtualenv
+        """
+        if 'VIRTUAL_ENV' not in os.environ:
+            # Not in a virtualenv
+            return
+        elif os.environ["VIRTUAL_ENV"] == "":
+            warn("Virtual env path set to '', please check if this is intended.")
+            return
+
+        p = Path(sys.executable)
+        p_venv = Path(os.environ["VIRTUAL_ENV"]).resolve()
+
+        # fallback venv detection:
+        # stdlib venv may symlink sys.executable, so we can't use realpath.
+        # but others can symlink *to* the venv Python, so we can't just use sys.executable.
+        # So we just check every item in the symlink tree (generally <= 3)
+        paths = self.get_path_links(p)
+
+        # In Cygwin paths like "c:\..." and '\cygdrive\c\...' are possible
+        if len(p_venv.parts) > 2 and p_venv.parts[1] == "cygdrive":
+            drive_name = p_venv.parts[2]
+            p_venv = (drive_name + ":/") / Path(*p_venv.parts[3:])
+
+        if any(p_venv == p.parents[1].resolve() for p in paths):
+            # Our exe is inside or has access to the virtualenv, don't need to do anything.
+            return
+
+        if sys.platform == "win32":
+            virtual_env = str(Path(os.environ["VIRTUAL_ENV"], "Lib", "site-packages"))
+        else:
+            virtual_env_path = Path(
+                os.environ["VIRTUAL_ENV"], "lib", "python{}.{}", "site-packages"
+            )
+            p_ver = sys.version_info[:2]
+
+            # Predict version from py[thon]-x.x in the $VIRTUAL_ENV
+            re_m = re.search(r"\bpy(?:thon)?([23])\.(\d+)\b", os.environ["VIRTUAL_ENV"])
+            if re_m:
+                predicted_path = Path(str(virtual_env_path).format(*re_m.groups()))
+                if predicted_path.exists():
+                    p_ver = re_m.groups()
+
+            virtual_env = str(virtual_env_path).format(*p_ver)
+        if self.warn_venv:
+            warn(
+                "Attempting to work in a virtualenv. If you encounter problems, "
+                "please install IPython inside the virtualenv."
+            )
+        import site
+        sys.path.insert(0, virtual_env)
+        site.addsitedir(virtual_env)
+
+    #-------------------------------------------------------------------------
+    # Things related to injections into the sys module
+    #-------------------------------------------------------------------------
+
+    def save_sys_module_state(self):
+        """Save the state of hooks in the sys module.
+
+        This has to be called after self.user_module is created.
+        """
+        self._orig_sys_module_state = {'stdin': sys.stdin,
+                                       'stdout': sys.stdout,
+                                       'stderr': sys.stderr,
+                                       'excepthook': sys.excepthook}
+        self._orig_sys_modules_main_name = self.user_module.__name__
+        self._orig_sys_modules_main_mod = sys.modules.get(self.user_module.__name__)
+
+    def restore_sys_module_state(self):
+        """Restore the state of the sys module."""
+        try:
+            for k, v in self._orig_sys_module_state.items():
+                setattr(sys, k, v)
+        except AttributeError:
+            pass
+        # Reset what what done in self.init_sys_modules
+        if self._orig_sys_modules_main_mod is not None:
+            sys.modules[self._orig_sys_modules_main_name] = self._orig_sys_modules_main_mod
+
+    #-------------------------------------------------------------------------
+    # Things related to the banner
+    #-------------------------------------------------------------------------
+
+    @property
+    def banner(self):
+        banner = self.banner1
+        if self.profile and self.profile != 'default':
+            banner += '\nIPython profile: %s\n' % self.profile
+        if self.banner2:
+            banner += '\n' + self.banner2
+        elif self.enable_tip:
+            banner += "Tip: {tip}\n".format(tip=pick_tip())
+        return banner
+
+    def show_banner(self, banner=None):
+        if banner is None:
+            banner = self.banner
+        print(banner, end="")
+
+    #-------------------------------------------------------------------------
+    # Things related to hooks
+    #-------------------------------------------------------------------------
+
+    def init_hooks(self):
+        # hooks holds pointers used for user-side customizations
+        self.hooks = Struct()
+
+        self.strdispatchers = {}
+
+        # Set all default hooks, defined in the IPython.hooks module.
+        hooks = IPython.core.hooks
+        for hook_name in hooks.__all__:
+            # default hooks have priority 100, i.e. low; user hooks should have
+            # 0-100 priority
+            self.set_hook(hook_name, getattr(hooks, hook_name), 100)
+
+        if self.display_page:
+            self.set_hook('show_in_pager', page.as_hook(page.display_page), 90)
+
+    def set_hook(self, name, hook, priority=50, str_key=None, re_key=None):
+        """set_hook(name,hook) -> sets an internal IPython hook.
+
+        IPython exposes some of its internal API as user-modifiable hooks.  By
+        adding your function to one of these hooks, you can modify IPython's
+        behavior to call at runtime your own routines."""
+
+        # At some point in the future, this should validate the hook before it
+        # accepts it.  Probably at least check that the hook takes the number
+        # of args it's supposed to.
+
+        f = types.MethodType(hook,self)
+
+        # check if the hook is for strdispatcher first
+        if str_key is not None:
+            sdp = self.strdispatchers.get(name, StrDispatch())
+            sdp.add_s(str_key, f, priority )
+            self.strdispatchers[name] = sdp
+            return
+        if re_key is not None:
+            sdp = self.strdispatchers.get(name, StrDispatch())
+            sdp.add_re(re.compile(re_key), f, priority )
+            self.strdispatchers[name] = sdp
+            return
+
+        dp = getattr(self.hooks, name, None)
+        if name not in IPython.core.hooks.__all__:
+            print("Warning! Hook '%s' is not one of %s" % \
+                  (name, IPython.core.hooks.__all__ ))
+
+        if not dp:
+            dp = IPython.core.hooks.CommandChainDispatcher()
+
+        try:
+            dp.add(f,priority)
+        except AttributeError:
+            # it was not commandchain, plain old func - replace
+            dp = f
+
+        setattr(self.hooks,name, dp)
+
+    #-------------------------------------------------------------------------
+    # Things related to events
+    #-------------------------------------------------------------------------
+
+    def init_events(self):
+        self.events = EventManager(self, available_events)
+
+        self.events.register("pre_execute", self._clear_warning_registry)
+
+    def _clear_warning_registry(self):
+        # clear the warning registry, so that different code blocks with
+        # overlapping line number ranges don't cause spurious suppression of
+        # warnings (see gh-6611 for details)
+        if "__warningregistry__" in self.user_global_ns:
+            del self.user_global_ns["__warningregistry__"]
+
+    #-------------------------------------------------------------------------
+    # Things related to the "main" module
+    #-------------------------------------------------------------------------
+
+    def new_main_mod(self, filename, modname):
+        """Return a new 'main' module object for user code execution.
+
+        ``filename`` should be the path of the script which will be run in the
+        module. Requests with the same filename will get the same module, with
+        its namespace cleared.
+
+        ``modname`` should be the module name - normally either '__main__' or
+        the basename of the file without the extension.
+
+        When scripts are executed via %run, we must keep a reference to their
+        __main__ module around so that Python doesn't
+        clear it, rendering references to module globals useless.
+
+        This method keeps said reference in a private dict, keyed by the
+        absolute path of the script. This way, for multiple executions of the
+        same script we only keep one copy of the namespace (the last one),
+        thus preventing memory leaks from old references while allowing the
+        objects from the last execution to be accessible.
+        """
+        filename = os.path.abspath(filename)
+        try:
+            main_mod = self._main_mod_cache[filename]
+        except KeyError:
+            main_mod = self._main_mod_cache[filename] = types.ModuleType(
+                        modname,
+                        doc="Module created for script run in IPython")
+        else:
+            main_mod.__dict__.clear()
+            main_mod.__name__ = modname
+
+        main_mod.__file__ = filename
+        # It seems pydoc (and perhaps others) needs any module instance to
+        # implement a __nonzero__ method
+        main_mod.__nonzero__ = lambda : True
+
+        return main_mod
+
+    def clear_main_mod_cache(self):
+        """Clear the cache of main modules.
+
+        Mainly for use by utilities like %reset.
+
+        Examples
+        --------
+        In [15]: import IPython
+
+        In [16]: m = _ip.new_main_mod(IPython.__file__, 'IPython')
+
+        In [17]: len(_ip._main_mod_cache) > 0
+        Out[17]: True
+
+        In [18]: _ip.clear_main_mod_cache()
+
+        In [19]: len(_ip._main_mod_cache) == 0
+        Out[19]: True
+        """
+        self._main_mod_cache.clear()
+
+    #-------------------------------------------------------------------------
+    # Things related to debugging
+    #-------------------------------------------------------------------------
+
+    def init_pdb(self):
+        # Set calling of pdb on exceptions
+        # self.call_pdb is a property
+        self.call_pdb = self.pdb
+
+    def _get_call_pdb(self):
+        return self._call_pdb
+
+    def _set_call_pdb(self,val):
+
+        if val not in (0,1,False,True):
+            raise ValueError('new call_pdb value must be boolean')
+
+        # store value in instance
+        self._call_pdb = val
+
+        # notify the actual exception handlers
+        self.InteractiveTB.call_pdb = val
+
+    call_pdb = property(_get_call_pdb,_set_call_pdb,None,
+                        'Control auto-activation of pdb at exceptions')
+
+    def debugger(self,force=False):
+        """Call the pdb debugger.
+
+        Keywords:
+
+          - force(False): by default, this routine checks the instance call_pdb
+            flag and does not actually invoke the debugger if the flag is false.
+            The 'force' option forces the debugger to activate even if the flag
+            is false.
+        """
+
+        if not (force or self.call_pdb):
+            return
+
+        if not hasattr(sys,'last_traceback'):
+            error('No traceback has been produced, nothing to debug.')
+            return
+
+        self.InteractiveTB.debugger(force=True)
+
+    #-------------------------------------------------------------------------
+    # Things related to IPython's various namespaces
+    #-------------------------------------------------------------------------
+    default_user_namespaces = True
+
+    def init_create_namespaces(self, user_module=None, user_ns=None):
+        # Create the namespace where the user will operate.  user_ns is
+        # normally the only one used, and it is passed to the exec calls as
+        # the locals argument.  But we do carry a user_global_ns namespace
+        # given as the exec 'globals' argument,  This is useful in embedding
+        # situations where the ipython shell opens in a context where the
+        # distinction between locals and globals is meaningful.  For
+        # non-embedded contexts, it is just the same object as the user_ns dict.
+
+        # FIXME. For some strange reason, __builtins__ is showing up at user
+        # level as a dict instead of a module. This is a manual fix, but I
+        # should really track down where the problem is coming from. Alex
+        # Schmolck reported this problem first.
+
+        # A useful post by Alex Martelli on this topic:
+        # Re: inconsistent value from __builtins__
+        # Von: Alex Martelli <aleaxit@yahoo.com>
+        # Datum: Freitag 01 Oktober 2004 04:45:34 nachmittags/abends
+        # Gruppen: comp.lang.python
+
+        # Michael Hohn <hohn@hooknose.lbl.gov> wrote:
+        # > >>> print type(builtin_check.get_global_binding('__builtins__'))
+        # > <type 'dict'>
+        # > >>> print type(__builtins__)
+        # > <type 'module'>
+        # > Is this difference in return value intentional?
+
+        # Well, it's documented that '__builtins__' can be either a dictionary
+        # or a module, and it's been that way for a long time. Whether it's
+        # intentional (or sensible), I don't know. In any case, the idea is
+        # that if you need to access the built-in namespace directly, you
+        # should start with "import __builtin__" (note, no 's') which will
+        # definitely give you a module. Yeah, it's somewhat confusing:-(.
+
+        # These routines return a properly built module and dict as needed by
+        # the rest of the code, and can also be used by extension writers to
+        # generate properly initialized namespaces.
+        if (user_ns is not None) or (user_module is not None):
+            self.default_user_namespaces = False
+        self.user_module, self.user_ns = self.prepare_user_module(user_module, user_ns)
+
+        # A record of hidden variables we have added to the user namespace, so
+        # we can list later only variables defined in actual interactive use.
+        self.user_ns_hidden = {}
+
+        # Now that FakeModule produces a real module, we've run into a nasty
+        # problem: after script execution (via %run), the module where the user
+        # code ran is deleted.  Now that this object is a true module (needed
+        # so doctest and other tools work correctly), the Python module
+        # teardown mechanism runs over it, and sets to None every variable
+        # present in that module.  Top-level references to objects from the
+        # script survive, because the user_ns is updated with them.  However,
+        # calling functions defined in the script that use other things from
+        # the script will fail, because the function's closure had references
+        # to the original objects, which are now all None.  So we must protect
+        # these modules from deletion by keeping a cache.
+        #
+        # To avoid keeping stale modules around (we only need the one from the
+        # last run), we use a dict keyed with the full path to the script, so
+        # only the last version of the module is held in the cache.  Note,
+        # however, that we must cache the module *namespace contents* (their
+        # __dict__).  Because if we try to cache the actual modules, old ones
+        # (uncached) could be destroyed while still holding references (such as
+        # those held by GUI objects that tend to be long-lived)>
+        #
+        # The %reset command will flush this cache.  See the cache_main_mod()
+        # and clear_main_mod_cache() methods for details on use.
+
+        # This is the cache used for 'main' namespaces
+        self._main_mod_cache = {}
+
+        # A table holding all the namespaces IPython deals with, so that
+        # introspection facilities can search easily.
+        self.ns_table = {'user_global':self.user_module.__dict__,
+                         'user_local':self.user_ns,
+                         'builtin':builtin_mod.__dict__
+                         }
+
+    @property
+    def user_global_ns(self):
+        return self.user_module.__dict__
+
+    def prepare_user_module(self, user_module=None, user_ns=None):
+        """Prepare the module and namespace in which user code will be run.
+
+        When IPython is started normally, both parameters are None: a new module
+        is created automatically, and its __dict__ used as the namespace.
+
+        If only user_module is provided, its __dict__ is used as the namespace.
+        If only user_ns is provided, a dummy module is created, and user_ns
+        becomes the global namespace. If both are provided (as they may be
+        when embedding), user_ns is the local namespace, and user_module
+        provides the global namespace.
+
+        Parameters
+        ----------
+        user_module : module, optional
+            The current user module in which IPython is being run. If None,
+            a clean module will be created.
+        user_ns : dict, optional
+            A namespace in which to run interactive commands.
+
+        Returns
+        -------
+        A tuple of user_module and user_ns, each properly initialised.
+        """
+        if user_module is None and user_ns is not None:
+            user_ns.setdefault("__name__", "__main__")
+            user_module = make_main_module_type(user_ns)()
+
+        if user_module is None:
+            user_module = types.ModuleType("__main__",
+                doc="Automatically created module for IPython interactive environment")
+
+        # We must ensure that __builtin__ (without the final 's') is always
+        # available and pointing to the __builtin__ *module*.  For more details:
+        # http://mail.python.org/pipermail/python-dev/2001-April/014068.html
+        user_module.__dict__.setdefault('__builtin__', builtin_mod)
+        user_module.__dict__.setdefault('__builtins__', builtin_mod)
+
+        if user_ns is None:
+            user_ns = user_module.__dict__
+        return user_module, user_ns
+
+    def init_sys_modules(self):
+        # We need to insert into sys.modules something that looks like a
+        # module but which accesses the IPython namespace, for shelve and
+        # pickle to work interactively. Normally they rely on getting
+        # everything out of __main__, but for embedding purposes each IPython
+        # instance has its own private namespace, so we can't go shoving
+        # everything into __main__.
+
+        # note, however, that we should only do this for non-embedded
+        # ipythons, which really mimic the __main__.__dict__ with their own
+        # namespace.  Embedded instances, on the other hand, should not do
+        # this because they need to manage the user local/global namespaces
+        # only, but they live within a 'normal' __main__ (meaning, they
+        # shouldn't overtake the execution environment of the script they're
+        # embedded in).
+
+        # This is overridden in the InteractiveShellEmbed subclass to a no-op.
+        main_name = self.user_module.__name__
+        sys.modules[main_name] = self.user_module
+
+    def init_user_ns(self):
+        """Initialize all user-visible namespaces to their minimum defaults.
+
+        Certain history lists are also initialized here, as they effectively
+        act as user namespaces.
+
+        Notes
+        -----
+        All data structures here are only filled in, they are NOT reset by this
+        method.  If they were not empty before, data will simply be added to
+        them.
+        """
+        # This function works in two parts: first we put a few things in
+        # user_ns, and we sync that contents into user_ns_hidden so that these
+        # initial variables aren't shown by %who.  After the sync, we add the
+        # rest of what we *do* want the user to see with %who even on a new
+        # session (probably nothing, so they really only see their own stuff)
+
+        # The user dict must *always* have a __builtin__ reference to the
+        # Python standard __builtin__ namespace,  which must be imported.
+        # This is so that certain operations in prompt evaluation can be
+        # reliably executed with builtins.  Note that we can NOT use
+        # __builtins__ (note the 's'),  because that can either be a dict or a
+        # module, and can even mutate at runtime, depending on the context
+        # (Python makes no guarantees on it).  In contrast, __builtin__ is
+        # always a module object, though it must be explicitly imported.
+
+        # For more details:
+        # http://mail.python.org/pipermail/python-dev/2001-April/014068.html
+        ns = {}
+
+        # make global variables for user access to the histories
+        if self.history_manager is not None:
+            ns["_ih"] = self.history_manager.input_hist_parsed
+            ns["_oh"] = self.history_manager.output_hist
+            ns["_dh"] = self.history_manager.dir_hist
+
+            # user aliases to input and output histories.  These shouldn't show up
+            # in %who, as they can have very large reprs.
+            ns["In"] = self.history_manager.input_hist_parsed
+            ns["Out"] = self.history_manager.output_hist
+
+        # Store myself as the public api!!!
+        ns['get_ipython'] = self.get_ipython
+
+        ns['exit'] = self.exiter
+        ns['quit'] = self.exiter
+        ns["open"] = _modified_open
+
+        # Sync what we've added so far to user_ns_hidden so these aren't seen
+        # by %who
+        self.user_ns_hidden.update(ns)
+
+        # Anything put into ns now would show up in %who.  Think twice before
+        # putting anything here, as we really want %who to show the user their
+        # stuff, not our variables.
+
+        # Finally, update the real user's namespace
+        self.user_ns.update(ns)
+
+    @property
+    def all_ns_refs(self):
+        """Get a list of references to all the namespace dictionaries in which
+        IPython might store a user-created object.
+
+        Note that this does not include the displayhook, which also caches
+        objects from the output."""
+        return [self.user_ns, self.user_global_ns, self.user_ns_hidden] + \
+               [m.__dict__ for m in self._main_mod_cache.values()]
+
+    def reset(self, new_session=True, aggressive=False):
+        """Clear all internal namespaces, and attempt to release references to
+        user objects.
+
+        If new_session is True, a new history session will be opened.
+        """
+        # Clear histories
+        if self.history_manager is not None:
+            self.history_manager.reset(new_session)
+        # Reset counter used to index all histories
+        if new_session:
+            self.execution_count = 1
+
+        # Reset last execution result
+        self.last_execution_succeeded = True
+        self.last_execution_result = None
+
+        # Flush cached output items
+        if self.displayhook.do_full_cache:
+            self.displayhook.flush()
+
+        # The main execution namespaces must be cleared very carefully,
+        # skipping the deletion of the builtin-related keys, because doing so
+        # would cause errors in many object's __del__ methods.
+        if self.user_ns is not self.user_global_ns:
+            self.user_ns.clear()
+        ns = self.user_global_ns
+        drop_keys = set(ns.keys())
+        drop_keys.discard('__builtin__')
+        drop_keys.discard('__builtins__')
+        drop_keys.discard('__name__')
+        for k in drop_keys:
+            del ns[k]
+
+        self.user_ns_hidden.clear()
+
+        # Restore the user namespaces to minimal usability
+        self.init_user_ns()
+        if aggressive and not hasattr(self, "_sys_modules_keys"):
+            print("Cannot restore sys.module, no snapshot")
+        elif aggressive:
+            print("culling sys module...")
+            current_keys = set(sys.modules.keys())
+            for k in current_keys - self._sys_modules_keys:
+                if k.startswith("multiprocessing"):
+                    continue
+                del sys.modules[k]
+
+        # Restore the default and user aliases
+        self.alias_manager.clear_aliases()
+        self.alias_manager.init_aliases()
+
+        # Now define aliases that only make sense on the terminal, because they
+        # need direct access to the console in a way that we can't emulate in
+        # GUI or web frontend
+        if os.name == 'posix':
+            for cmd in ('clear', 'more', 'less', 'man'):
+                if cmd not in self.magics_manager.magics['line']:
+                    self.alias_manager.soft_define_alias(cmd, cmd)
+
+        # Flush the private list of module references kept for script
+        # execution protection
+        self.clear_main_mod_cache()
+
+    def del_var(self, varname, by_name=False):
+        """Delete a variable from the various namespaces, so that, as
+        far as possible, we're not keeping any hidden references to it.
+
+        Parameters
+        ----------
+        varname : str
+            The name of the variable to delete.
+        by_name : bool
+            If True, delete variables with the given name in each
+            namespace. If False (default), find the variable in the user
+            namespace, and delete references to it.
+        """
+        if varname in ('__builtin__', '__builtins__'):
+            raise ValueError("Refusing to delete %s" % varname)
+
+        ns_refs = self.all_ns_refs
+
+        if by_name:                    # Delete by name
+            for ns in ns_refs:
+                try:
+                    del ns[varname]
+                except KeyError:
+                    pass
+        else:                         # Delete by object
+            try:
+                obj = self.user_ns[varname]
+            except KeyError as e:
+                raise NameError("name '%s' is not defined" % varname) from e
+            # Also check in output history
+            assert self.history_manager is not None
+            ns_refs.append(self.history_manager.output_hist)
+            for ns in ns_refs:
+                to_delete = [n for n, o in ns.items() if o is obj]
+                for name in to_delete:
+                    del ns[name]
+
+            # Ensure it is removed from the last execution result
+            if self.last_execution_result.result is obj:
+                self.last_execution_result = None
+
+            # displayhook keeps extra references, but not in a dictionary
+            for name in ('_', '__', '___'):
+                if getattr(self.displayhook, name) is obj:
+                    setattr(self.displayhook, name, None)
+
+    def reset_selective(self, regex=None):
+        """Clear selective variables from internal namespaces based on a
+        specified regular expression.
+
+        Parameters
+        ----------
+        regex : string or compiled pattern, optional
+            A regular expression pattern that will be used in searching
+            variable names in the users namespaces.
+        """
+        if regex is not None:
+            try:
+                m = re.compile(regex)
+            except TypeError as e:
+                raise TypeError('regex must be a string or compiled pattern') from e
+            # Search for keys in each namespace that match the given regex
+            # If a match is found, delete the key/value pair.
+            for ns in self.all_ns_refs:
+                for var in ns:
+                    if m.search(var):
+                        del ns[var]
+
+    def push(self, variables, interactive=True):
+        """Inject a group of variables into the IPython user namespace.
+
+        Parameters
+        ----------
+        variables : dict, str or list/tuple of str
+            The variables to inject into the user's namespace.  If a dict, a
+            simple update is done.  If a str, the string is assumed to have
+            variable names separated by spaces.  A list/tuple of str can also
+            be used to give the variable names.  If just the variable names are
+            give (list/tuple/str) then the variable values looked up in the
+            callers frame.
+        interactive : bool
+            If True (default), the variables will be listed with the ``who``
+            magic.
+        """
+        vdict = None
+
+        # We need a dict of name/value pairs to do namespace updates.
+        if isinstance(variables, dict):
+            vdict = variables
+        elif isinstance(variables, (str, list, tuple)):
+            if isinstance(variables, str):
+                vlist = variables.split()
+            else:
+                vlist = list(variables)
+            vdict = {}
+            cf = sys._getframe(1)
+            for name in vlist:
+                try:
+                    vdict[name] = eval(name, cf.f_globals, cf.f_locals)
+                except:
+                    print('Could not get variable %s from %s' %
+                           (name,cf.f_code.co_name))
+        else:
+            raise ValueError('variables must be a dict/str/list/tuple')
+
+        # Propagate variables to user namespace
+        self.user_ns.update(vdict)
+
+        # And configure interactive visibility
+        user_ns_hidden = self.user_ns_hidden
+        if interactive:
+            for name in vdict:
+                user_ns_hidden.pop(name, None)
+        else:
+            user_ns_hidden.update(vdict)
+
+    def drop_by_id(self, variables):
+        """Remove a dict of variables from the user namespace, if they are the
+        same as the values in the dictionary.
+
+        This is intended for use by extensions: variables that they've added can
+        be taken back out if they are unloaded, without removing any that the
+        user has overwritten.
+
+        Parameters
+        ----------
+        variables : dict
+            A dictionary mapping object names (as strings) to the objects.
+        """
+        for name, obj in variables.items():
+            if name in self.user_ns and self.user_ns[name] is obj:
+                del self.user_ns[name]
+                self.user_ns_hidden.pop(name, None)
+
+    #-------------------------------------------------------------------------
+    # Things related to object introspection
+    #-------------------------------------------------------------------------
+    @staticmethod
+    def _find_parts(oname: str) -> Tuple[bool, ListType[str]]:
+        """
+        Given an object name, return a list of parts of this object name.
+
+        Basically split on docs when using attribute access,
+        and extract the value when using square bracket.
+
+
+        For example foo.bar[3].baz[x] -> foo, bar, 3, baz, x
+
+
+        Returns
+        -------
+        parts_ok: bool
+            whether we were properly able to parse parts.
+        parts: list of str
+            extracted parts
+
+
+
+        """
+        raw_parts = oname.split(".")
+        parts = []
+        parts_ok = True
+        for p in raw_parts:
+            if p.endswith("]"):
+                var, *indices = p.split("[")
+                if not var.isidentifier():
+                    parts_ok = False
+                    break
+                parts.append(var)
+                for ind in indices:
+                    if ind[-1] != "]" and not is_integer_string(ind[:-1]):
+                        parts_ok = False
+                        break
+                    parts.append(ind[:-1])
+                continue
+
+            if not p.isidentifier():
+                parts_ok = False
+            parts.append(p)
+
+        return parts_ok, parts
+
+    def _ofind(
+        self, oname: str, namespaces: Optional[Sequence[Tuple[str, AnyType]]] = None
+    ) -> OInfo:
+        """Find an object in the available namespaces.
+
+
+        Returns
+        -------
+        OInfo with fields:
+          - ismagic
+          - isalias
+          - found
+          - obj
+          - namespac
+          - parent
+
+        Has special code to detect magic functions.
+        """
+        oname = oname.strip()
+        parts_ok, parts = self._find_parts(oname)
+
+        if (
+            not oname.startswith(ESC_MAGIC)
+            and not oname.startswith(ESC_MAGIC2)
+            and not parts_ok
+        ):
+            return OInfo(
+                ismagic=False,
+                isalias=False,
+                found=False,
+                obj=None,
+                namespace=None,
+                parent=None,
+            )
+
+        if namespaces is None:
+            # Namespaces to search in:
+            # Put them in a list. The order is important so that we
+            # find things in the same order that Python finds them.
+            namespaces = [ ('Interactive', self.user_ns),
+                           ('Interactive (global)', self.user_global_ns),
+                           ('Python builtin', builtin_mod.__dict__),
+                           ]
+
+        ismagic = False
+        isalias = False
+        found = False
+        ospace = None
+        parent = None
+        obj = None
+
+
+        # Look for the given name by splitting it in parts.  If the head is
+        # found, then we look for all the remaining parts as members, and only
+        # declare success if we can find them all.
+        oname_parts = parts
+        oname_head, oname_rest = oname_parts[0],oname_parts[1:]
+        for nsname,ns in namespaces:
+            try:
+                obj = ns[oname_head]
+            except KeyError:
+                continue
+            else:
+                for idx, part in enumerate(oname_rest):
+                    try:
+                        parent = obj
+                        # The last part is looked up in a special way to avoid
+                        # descriptor invocation as it may raise or have side
+                        # effects.
+                        if idx == len(oname_rest) - 1:
+                            obj = self._getatt

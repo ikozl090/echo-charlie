@@ -1,3 +1,4 @@
-from .echo_charlie import EchoCharlie  # adjust module name to match where the class lives
+from .echo_charlie import EchoCharlie 
+from .echo_db import EchoDB
 
-__all__ = ["EchoCharlie"]
+__all__ = ["EchoCharlie", "EchoDB"]

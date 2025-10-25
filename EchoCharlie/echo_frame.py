@@ -5,7 +5,7 @@ from audio_extract import extract_audio
 from echo_embed import Embed
 
 class GetFrame:
-    def __init__(self, n_frames, emb_dim=128):
+    def __init__(self, n_frames=3, emb_dim=128):
         super(GetFrame,self).__init__()
         self.nframes = n_frames
         self.emb_dim = emb_dim
@@ -31,13 +31,13 @@ class GetFrame:
     def embed(self,img,model_name = "Facenet"):
         return self.emb.forward(img,model_name)
 
-    def extract_audio(self,video_path):
+    def extract_audio(self,video_path, output_path):
         audio_fl = video_path.split("/")[-1].split(".")[0]
-        extract_audio(video_path, "/Users/poojaravi/Documents/GitHub/"+audio_fl+".wav")
+        extract_audio(video_path, output_path+audio_fl+".wav")
     
-    def forward(self, video_path):
+    def forward(self, video_path, out_audio_path):
         frames = self.parse_frames(video_path)
-        self.extract_audio(video_path)
+        self.extract_audio(video_path,out_audio_path)
         embeddings = np.zeros(self.nframes,self.emb_dim)
         for i in range(len(frames)):
             embeddings[i] = self.embed(frames[i])

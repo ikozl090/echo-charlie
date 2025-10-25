@@ -36,11 +36,14 @@ class GetFrame:
         extract_audio(video_path, output_path+audio_fl+".wav")
         return output_path+audio_fl+".wav"
     
-    def forward(self, video_path, out_audio_path):
+    def forward(self, video_path, out_audio_path=None):
         frames = self.parse_frames(video_path)
-        audio_path = self.extract_audio(video_path,out_audio_path)
+        key = video_path.split("/")[-1].split(".")[0]
+        if out_audio_path is not None:
+            audio_path = self.extract_audio(video_path,out_audio_path)
+        else: audio_path = None
         embeddings = np.zeros(self.nframes,self.emb_dim)
         for i in range(len(frames)):
             embeddings[i] = self.embed(frames[i])
-        return embeddings, audio_path
+        return embeddings, key, audio_path
     

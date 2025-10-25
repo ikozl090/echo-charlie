@@ -41,7 +41,7 @@ class GetFrame:
         video = VideoFileClip(video_path)
         audio = video.audio
         if audio is not None:
-            audio.write_audiofile(output_file, verbose=False, logger=None)
+            audio.write_audiofile(output_file)
             audio.close()
         video.close()
         

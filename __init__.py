@@ -1,3 +1,3 @@
-from EchoCharlie import EchoCharlie, EchoDB
+from EchoCharlie import EchoCharlie, EchoDB, GetFrame
 
-__all__ = ["EchoCharlie", "EchoDB"]
+__all__ = ["EchoCharlie", "EchoDB", "GetFrame"]

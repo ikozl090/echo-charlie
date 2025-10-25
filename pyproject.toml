@@ -14,7 +14,9 @@ dependencies = [
     "numpy>=2.3.4",
     "chromadb>=1.2.1",
     "sqlite-utils>=3.38",
-    "mutagen>=1.47.0",
+    "mutagen>=1.46.0",
+    "audio-extract>=0.7.0",
+    "tensorflow>=2.14.0",
 ]
 
 [tool.uv.sources]

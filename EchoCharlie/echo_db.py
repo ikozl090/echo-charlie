@@ -13,6 +13,9 @@ from mutagen import File as MutagenFile  # optional, to read tags/duration
 from pathlib import Path
 import hashlib, time
 
+# EchoCharlie Modules 
+from .echo_frame import GetFrame
+
 class EchoDB(): 
 
     vdb_collection: Collection = None
@@ -42,6 +45,14 @@ class EchoDB():
 
         self.audio_db["tags"].create({"key": str, "tag": str}, pk=("key","tag"), if_not_exists=True)
 
+    def push_video(self, video_path, n_frames: int = 3):
+        gf = GetFrame(n_frames = n_frames)
+
+        embeddings, audio_path, key = gf.forward(video_path)
+        
+        self.add_embeddings(embeddings = embeddings, keys = [key for k in embeddings])
+        self.index_audio(path = audio_path, key = key)
+
     def get_audio_from_embedding(self, embeddings: List[np.array]): 
         keys = self.query_vdb(embeddings) 
         results = []
@@ -55,8 +66,7 @@ class EchoDB():
     def __choose_key(self, keys: List[str]): 
         return keys[0]
 
-    def add_embedding_dir(self, embedding_dir: str, file_type: str = 'pkl'): 
-
+    def load_embedding_dir(self, embedding_dir: str, file_type: str = 'pkl'): 
         # NOTE: Only supports pickle files right now
         assert file_type == 'pkl'
 
@@ -72,11 +82,31 @@ class EchoDB():
 
         metadatas = [{"filename": f"{embedding_file}.png"} for embedding_file in embedding_files]
 
-        self.vdb_collection.add(
-            ids=embedding_files,
-            embeddings=embeddings,
-            metadatas=metadatas
-        )
+        return embeddings, embedding_files, metadatas 
+
+    def add_embeddings(self, embeddings: List[np.array], keys: List[str], metadatas: List[dict] = None): 
+        if metadatas: 
+            self.vdb_collection.add(
+                ids=keys,
+                embeddings=embeddings,
+                metadatas=metadatas
+            )
+        else: 
+            self.vdb_collection.add(
+                ids=keys,
+                embeddings=embeddings,
+            )
+
+    def add_embedding_dir(self, embedding_dir: str, file_type: str = 'pkl'): 
+
+        embeddings, embedding_files, metadatas = self.load_embedding_dir(embedding_dir = embedding_dir, file_type = file_type)
+
+        self.add_embeddings(embeddings = embeddings, keys = embedding_files, metadatas = metadatas)
+        # self.vdb_collection.add(
+        #     ids=embedding_files,
+        #     embeddings=embeddings,
+        #     metadatas=metadatas
+        # )
 
     def query_vdb(self, embeddings: List[np.array]): 
         results = self.vdb_collection.query(

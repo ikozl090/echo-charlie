@@ -86,6 +86,20 @@ wheels = [
 ]
 
 [[package]]
+name = "audio-extract"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ffmpeg-python" },
+    { name = "imageio-ffmpeg" },
+    { name = "mutagen" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/7b/e2d7b3bb9005efe3c1307f512c0f37572c067187c6690080b1ae9b2c9ac5/audio_extract-0.7.0.tar.gz", hash = "sha256:bf8d5f48146e2d4d15778a26cede57b303f465f299621539118448bc22100dbb", size = 6998 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/85/5433110bf0eb71151782694098b818b4f0b26fd2992623881694fd8a6a09/audio_extract-0.7.0-py3-none-any.whl", hash = "sha256:44495569a86e46a94d1606214d39abebc30db59ed207b8b900787c2e844a887d", size = 7466 },
+]
+
+[[package]]
 name = "autoavsr"
 version = "0.1.0"
 source = { git = "https://github.com/vishnouvina/Visual_Speech_Recognition_for_Multiple_Languages.git?branch=master#5219dce6e196eff890a86bc73ccecdf2746d1b43" }
@@ -258,6 +272,7 @@ name = "boson-ai-hackathon"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "audio-extract" },
     { name = "autoavsr" },
     { name = "chromadb" },
     { name = "deepface" },
@@ -267,20 +282,23 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "sqlite-utils" },
+    { name = "tensorflow" },
     { name = "tf-keras" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "audio-extract", specifier = ">=0.7.0" },
     { name = "autoavsr", git = "https://github.com/vishnouvina/Visual_Speech_Recognition_for_Multiple_Languages.git?branch=master" },
     { name = "chromadb", specifier = ">=1.2.1" },
     { name = "deepface", git = "https://github.com/serengil/deepface.git?branch=master" },
     { name = "ipykernel", specifier = ">=7.0.1" },
     { name = "matplotlib" },
-    { name = "mutagen", specifier = ">=1.47.0" },
+    { name = "mutagen", specifier = ">=1.46.0" },
     { name = "numpy", specifier = ">=2.3.4" },
     { name = "opencv-python" },
     { name = "sqlite-utils", specifier = ">=3.38" },
+    { name = "tensorflow", specifier = ">=2.14.0" },
     { name = "tf-keras" },
 ]
 
@@ -1205,6 +1223,19 @@ wheels = [
 ]
 
 [[package]]
+name = "imageio-ffmpeg"
+version = "0.4.8"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/a2/46e01fb2cae3a14ccc7f3af8ac95d7bab20d9759b734b5a861bff48a7a51/imageio-ffmpeg-0.4.8.tar.gz", hash = "sha256:fdaa05ad10fe070b7fa8e5f615cb0d28f3b9b791d00af6d2a11e694158d10aa9", size = 17224 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8e/ff/11f41411650d32b9d7051b41d8de6f6eb671e031214b09c1aaa47389682d/imageio_ffmpeg-0.4.8-py3-none-macosx_10_9_intel.macosx_10_9_x86_64.macosx_10_10_intel.macosx_10_10_x86_64.whl", hash = "sha256:dba439a303d65061aef17d2ee9324ecfa9c6b4752bd0953b309fdbb79b38451e", size = 22532537 },
+    { url = "https://files.pythonhosted.org/packages/dc/3f/fc9a0345a0ef2d9596c3d3d9549ac72377ea97c289abcf3c96f0821c3072/imageio_ffmpeg-0.4.8-py3-none-manylinux2010_x86_64.whl", hash = "sha256:7caa9ce9fc0d7e2f3160ce8cb70a115e5211e0f048e5c1509163d8f89d1080df", size = 26900001 },
+    { url = "https://files.pythonhosted.org/packages/41/27/75db3fa1ced57e644e942e2f7486dca70b3b27f4a5da9f8c2d8e5464c842/imageio_ffmpeg-0.4.8-py3-none-manylinux2014_aarch64.whl", hash = "sha256:dd3ef9835df91570a1cbd9e36dfbc7d228fca42dbb11636e20df75d719de2949", size = 22880069 },
+    { url = "https://files.pythonhosted.org/packages/ed/3f/0468065ee9080f11edd355a5eddadb6f32ca37a7ca81223eaefbfb63b8b6/imageio_ffmpeg-0.4.8-py3-none-win32.whl", hash = "sha256:0e2688120b3bdb367897450d07c1b1300e96a0bace03ba7de2eb8d738237ea9a", size = 19651713 },
+    { url = "https://files.pythonhosted.org/packages/7f/1d/9d9bb0beef06704cb3acb7cab8673b451d4528ee6cc9b231d1284aa1ed75/imageio_ffmpeg-0.4.8-py3-none-win_amd64.whl", hash = "sha256:120d70e6448617cad6213e47dee3a3310117c230f532dd614ed3059a78acf13a", size = 22619501 },
+]
+
+[[package]]
 name = "importlib-metadata"
 version = "8.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1949,11 +1980,11 @@ wheels = [
 
 [[package]]
 name = "mutagen"
-version = "1.47.0"
+version = "1.46.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/81/e6/64bc71b74eef4b68e61eb921dcf72dabd9e4ec4af1e11891bbd312ccbb77/mutagen-1.47.0.tar.gz", hash = "sha256:719fadef0a978c31b4cf3c956261b3c58b6948b32023078a2117b1de09f0fc99", size = 1274186 }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/54/d1760a363d0fe345528e37782f6c18123b0e99e8ea755022fd51f1ecd0f9/mutagen-1.46.0.tar.gz", hash = "sha256:6e5f8ba84836b99fe60be5fb27f84be4ad919bbb6b49caa6ae81e70584b55e58", size = 1268561 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/7a/620f945b96be1f6ee357d211d5bf74ab1b7fe72a9f1525aafbfe3aee6875/mutagen-1.47.0-py3-none-any.whl", hash = "sha256:edd96f50c5907a9539d8e5bba7245f62c9f520aef333d13392a79a4f70aca719", size = 194391 },
+    { url = "https://files.pythonhosted.org/packages/03/ee/114d7016d2e34f341e212fefb5e7bd87785077ebcfff0ad23a497c70eea1/mutagen-1.46.0-py3-none-any.whl", hash = "sha256:8af0728aa2d5c3ee5a727e28d0627966641fddfe804c23eabb5926a4d770aed5", size = 193643 },
 ]
 
 [[package]]

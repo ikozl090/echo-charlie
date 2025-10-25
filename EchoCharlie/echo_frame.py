@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from audio_extract import extract_audio
-from echo_embed import Embed
+from moviepy import VideoFileClip
+from .echo_embed import Embed
 
 class GetFrame:
     def __init__(self, n_frames=3, emb_dim=128):
@@ -21,10 +21,11 @@ class GetFrame:
             ret, frame = vidcap.read()
             if c < st:
                 continue
-            elif ret and ((c % mid==0) or (c % st==0) or (c % end==0)):
+            elif ret and ((c == mid) or (c == st) or (c == end)):
                 frames.append(frame)
             elif c > end:
                 break
+        print(f"DEBUG: Number of Frames is {len(frames)}")
         assert len(frames) == self.nframes
         return frames
         
@@ -33,14 +34,35 @@ class GetFrame:
 
     def extract_audio(self,video_path, output_path):
         audio_fl = video_path.split("/")[-1].split(".")[0]
-        extract_audio(video_path, output_path+audio_fl+".wav")
-        return output_path+audio_fl+".wav"
+        output_file = output_path+audio_fl+".wav"
+        
+        # Use moviepy to extract audio
+        video = VideoFileClip(video_path)
+        audio = video.audio
+        if audio is not None:
+            audio.write_audiofile(output_file, verbose=False, logger=None)
+            audio.close()
+        video.close()
+        
+        return output_file
     
-    def forward(self, video_path, out_audio_path):
+    # def forward(self, video_path, out_audio_path=None):
+    #     key = video_path.split("/")[-1].split(".")[0]
+    #     frames = self.parse_frames(video_path)
+    #     audio_path = self.extract_audio(video_path,out_audio_path)
+    #     embeddings = np.zeros(self.nframes,self.emb_dim)
+    #     for i in range(len(frames)):
+    #         embeddings[i] = self.embed(frames[i])
+    #     return embeddings, audio_path, key
+    
+
+    def forward(self, video_path, out_audio_path=None):
         frames = self.parse_frames(video_path)
-        audio_path = self.extract_audio(video_path,out_audio_path)
+        key = video_path.split("/")[-1].split(".")[0]
+        if out_audio_path is not None:
+            audio_path = self.extract_audio(video_path,out_audio_path)
+        else: audio_path = None
         embeddings = np.zeros(self.nframes,self.emb_dim)
         for i in range(len(frames)):
             embeddings[i] = self.embed(frames[i])
-        return embeddings, audio_path
-    
+        return embeddings, audio_path, key

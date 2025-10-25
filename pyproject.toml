@@ -1,0 +1,18 @@
+[project]
+name = "boson-ai-hackathon"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "deepface",
+    "ipykernel>=7.0.1",
+    "tf-keras",
+    "matplotlib",
+    "opencv-python",
+    "numpy>=2.3.4",
+    "chromadb>=1.2.1",
+]
+
+[tool.uv.sources]
+deepface = { git = "https://github.com/serengil/deepface.git", branch = "master" }

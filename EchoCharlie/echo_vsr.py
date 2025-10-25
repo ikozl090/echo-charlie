@@ -4,9 +4,9 @@ from pipelines.model import AVSR
 from pipelines.data.data_module import AVSRDataLoader
 from pipelines.detectors.mediapipe.detector import LandmarksDetector
 
-class InferencePipeline(torch.nn.Module):
+class VSRInferencePipeline(torch.nn.Module):
     def __init__(self, modality="video", model_path="../models/LRS3_V_WER19.1/model.pth", model_conf="../models/LRS3_V_WER19.1/model.json", detector="mediapipe", face_track=False, device="cpu"):
-        super(InferencePipeline, self).__init__()
+        super(VSRInferencePipeline, self).__init__()
         self.device = device
         self.modality = modality
         self.dataloader = AVSRDataLoader(modality, detector=detector)

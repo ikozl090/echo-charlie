@@ -23,7 +23,7 @@ class HiggsModel:
     def b64(self,path):
         return base64.b64encode(open(path, "rb").read()).decode("utf-8")
 
-    def higgs_out(self,ref_audio, ref_transcript, output_path):
+    def higgs_out(self,ref_audio,ref_transcript,out_transcript,output_path):
         
         system = (
             "You are an AI assistant designed to convert text into speech.\n"
@@ -43,7 +43,7 @@ class HiggsModel:
                         "input_audio": {"data": self.b64(ref_audio), "format": "wav"}
                     }],
                 },
-                {"role": "user", "content": "[SPEAKER0] WELL I THINK THAT IN TERMS OF HONESTY THE ONLY THING I CAN SAY IS EVERY TIME I SPEAK WITH VLADIMIR I HAVE GOOD CONVERSATIONS AND THEN THEY DON'T GO ANYWHERE THEY JUST DON'T GO ANYWHERE."},
+                {"role": "user", "content": out_transcript},
             ],
             modalities = self.modalities,
             max_completion_tokens = self.max_tokens,

@@ -17,6 +17,7 @@ dependencies = [
     "mutagen>=1.46.0",
     "audio-extract>=0.7.0",
     "tensorflow>=2.14.0",
+    "moviepy>=2.2.1",
 ]
 
 [tool.uv.sources]

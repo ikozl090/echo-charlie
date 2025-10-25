@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+from audio_extract import extract_audio
 from echo_embed import Embed
 
 class GetFrame:
@@ -27,17 +28,18 @@ class GetFrame:
         assert len(frames) == self.nframes
         return frames
         
-    def embed(self,img,model_name="Facenet"):
+    def embed(self,img,model_name = "Facenet"):
         return self.emb.forward(img,model_name)
+
+    def extract_audio(self,video_path):
+        audio_fl = video_path.split("/")[-1].split(".")[0]
+        extract_audio(video_path, "/Users/poojaravi/Documents/GitHub/"+audio_fl+".wav")
     
-    def forward(self,video_path):
+    def forward(self, video_path):
         frames = self.parse_frames(video_path)
+        self.extract_audio(video_path)
         embeddings = np.zeros(self.nframes,self.emb_dim)
         for i in range(len(frames)):
             embeddings[i] = self.embed(frames[i])
         return embeddings
     
-
-#out = parse_frames("/Users/poojaravi/Downloads/hackathon/output2.mp4")
-#plt.imshow(out)
-#plt.show()

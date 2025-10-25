@@ -5,7 +5,7 @@ from moviepy import VideoFileClip
 from .echo_embed import Embed
 
 class GetFrame:
-    def __init__(self, n_frames=3, emb_dim=128):
+    def __init__(self, n_frames=1, emb_dim=128):
         super(GetFrame,self).__init__()
         self.nframes = n_frames
         self.emb_dim = emb_dim
@@ -21,7 +21,8 @@ class GetFrame:
             ret, frame = vidcap.read()
             if c < st:
                 continue
-            elif ret and ((c == mid) or (c == st) or (c == end)):
+            #((c == mid) or (c == st) or (c == end))
+            elif ret and (c == mid):
                 frames.append(frame)
             elif c > end:
                 break

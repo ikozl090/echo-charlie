@@ -66,7 +66,9 @@ class GetFrame:
         if out_audio_path is not None:
             audio_path = self.extract_audio(video_path,out_audio_path)
         else: audio_path = None
-        embeddings = np.zeros(self.nframes,self.emb_dim)
+        embeddings = np.zeros((self.nframes,self.emb_dim))
         for i in range(len(frames)):
             embeddings[i] = self.embed(frames[i])
         return embeddings, audio_path, key
+    
+    

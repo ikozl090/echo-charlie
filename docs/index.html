@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Echo Charlie — Hackathon Demo</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      text-align: center;
+      background-color: #0f172a;
+      color: #f8fafc;
+      padding: 40px;
+    }
+    h1 {
+      color: #38bdf8;
+      margin-bottom: 10px;
+    }
+    p {
+      color: #cbd5e1;
+      max-width: 720px;
+      margin: 0 auto 30px auto;
+      line-height: 1.5;
+    }
+    img {
+      max-width: 720px;
+      border-radius: 10px;
+      margin-top: 20px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.4);
+    }
+    video, audio {
+      margin-top: 25px;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.4);
+    }
+    footer {
+      margin-top: 40px;
+      color: #94a3b8;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎬 Echo Charlie — Hackathon Demo</h1>
+  <p>
+    Echo Charlie is a multimodal voice restoration pipeline that rebuilds lost audio in videos using
+    visual speech recognition, transcript cleanup, and voice cloning models.
+  </p>
+
+  <!-- Flow diagram -->
+  <img src="flow.jpeg" alt="Pipeline flow diagram">
+
+  <!-- Video player -->
+  <video controls width="720" poster="flow.jpeg">
+    <source src="hackathon_video.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+
+  <!-- Audio player -->
+  <audio controls style="width:720px;">
+    <source src="charlie_narrated_full.wav" type="audio/wav">
+    Your browser does not support the audio element.
+  </audio>
+
+  <footer>
+    <p>© 2025 Echo Charlie — Built by Vishnou Vinayagame for the Boson AI Hackathon</p>
+  </footer>
+</body>
+</html>

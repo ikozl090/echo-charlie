@@ -25,6 +25,7 @@ dependencies = [
     "tensorflow-estimator==2.15.0",
     "tensorflow-metal==1.1.0",
     "openai>=2.6.1",
+    "streamlit>=1.50.0",
 ]
 
 [tool.uv.sources]

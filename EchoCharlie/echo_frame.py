@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from moviepy import VideoFileClip
+<<<<<<< Updated upstream
 import sys
 import os
 
@@ -13,6 +14,9 @@ except ImportError:
     if current_dir not in sys.path:
         sys.path.insert(0, current_dir)
     from echo_embed import Embed
+=======
+from echo_embed import Embed
+>>>>>>> Stashed changes
 
 class GetFrame:
     def __init__(self, n_frames=1, emb_dim=128):

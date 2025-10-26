@@ -70,8 +70,9 @@ class EchoCharlie():
         ref_embedding, _ = self.get_frames(ref_video)
         return ref_embedding
     
-    def forward(self,out_path:str,references:List[str]):
-        self.store_frames(references)
+    def forward(self,out_path:str,references:List[str]=None):
+        if references is not None:
+            self.store_frames(references)
         ref_emb = self.get_emb()
         ref_audio_dict = self.get_audio(ref_emb)[0][0]
         ref_audio = ref_audio_dict["path"]
@@ -90,7 +91,9 @@ class EchoCharlie():
         audio_path = self.HiggsModel.higgs_out(ref_audio,ref_transcript,main_transcript,out_path)
         
         return self.video, audio_path
-        
+
+
+
 def test():
     api_key="bai-2Cf0fqjMBPVF6iwNd0PNwp7DVAQFqQgmGbu1iEa_JahdDUoJ"
     v_pth = "/Users/itaykozlov/Projects/echo-charlie/data/videos/trudeau_3.mp4" #"../data/videos/obama_3_one_word_error.mp4"

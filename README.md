@@ -142,11 +142,6 @@ integration, import validation, and database behavior. Launch them with
 - **Boson API failures** – Verify your key has access to `Qwen3-32B` and
   `higgs-audio-generation` models and that network egress is allowed.
 
-## Roadmap Ideas
-- Parametrize Streamlit asset paths and upload handling
-- Batched ingest pipeline for large reference libraries
-- Automated tests for retrieval quality and speech synthesis
-
 ## License
 No explicit license is included. Confirm usage terms before distributing the
 project or releasing derived work.

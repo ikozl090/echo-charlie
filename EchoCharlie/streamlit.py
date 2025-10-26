@@ -5,7 +5,7 @@ from echo_db import EchoDB
 
 st.title("CharlieYaplin")
 
-st.write("Hello from VS Code!")
+st.write("Hello from Itay, Pooja and Vishnou!")
 
 echo_db = EchoDB(db_path="./demo_db_3", collection_name = "demo_collection_3", audio_db_name = "demo_audio_3.db")
 main_path = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/"
@@ -126,3 +126,7 @@ if st.button("Generate Audio"):
 if st.button("Generate Video"):
     person_vid = path.split("/")[-1].split(".")[0] + "_unmuted.mp4"
     st.video(main_path+"generated_videos/"+person_vid)
+
+if st.button("Original Video"):
+    person_vid = path.split("/")[-1].split(".")[0] + ".mp4"
+    st.video(main_path+"videos/"+person_vid)

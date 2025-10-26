@@ -12,3 +12,6 @@ wheels/
 
 # DB Folder 
 echo_db
+
+# API Keys 
+config.json

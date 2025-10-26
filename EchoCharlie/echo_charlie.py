@@ -46,7 +46,7 @@ class EchoCharlie():
         self.VSR = VSRInferencePipeline()
         self.Qwen = QwenModel(qwen_api_key)
         self.HiggsModel = HiggsModel(higgs_api_key)
-        self.echo_db = EchoDB(db_path="./demo_db_4", collection_name = "demo_collection_4", audio_db_name = "demo_audio_4.db")
+        self.echo_db = EchoDB()
         self.Embed = Embed(emb_dim)
         
         
@@ -95,12 +95,16 @@ class EchoCharlie():
 
 
 def test():
-    api_key="bai-2Cf0fqjMBPVF6iwNd0PNwp7DVAQFqQgmGbu1iEa_JahdDUoJ"
-    v_pth = "/Users/itaykozlov/Projects/echo-charlie/data/videos/trudeau_3.mp4" #"../data/videos/obama_3_one_word_error.mp4"
-    transc = "../data/transcripts/transcript.json"
+    import json
+    with open("config.json", "r") as config_file:
+        config = json.load(config_file)
+    api_key = config.get("api_key", "")
+
+    v_pth = "data/videos/trudeau_3.mp4" #"data/videos/obama_3_one_word_error.mp4"
+    transc = "data/transcripts/transcript.json"
     ec = EchoCharlie(video_path=v_pth,transcripts=transc,qwen_api_key=api_key,higgs_api_key=api_key)
-    out = "../data/audio/output_sample3.wav"
-    refs = ["../data/videos/trump_ref.mp4","../data/videos/trudeau_ref.mp4","../data/videos/macron_ref.mp4","../data/videos/obama_ref.mp4"]
+    out = "data/audio/output_sample3.wav"
+    refs = ["data/videos/trump_ref.mp4","data/videos/trudeau_ref.mp4","data/videos/macron_ref.mp4","data/videos/obama_ref.mp4"]
     v, a = ec.forward(out,refs)
 
 if __name__ == "__main__":

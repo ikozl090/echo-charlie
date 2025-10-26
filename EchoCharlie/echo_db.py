@@ -6,6 +6,7 @@ import os
 import pickle
 import numpy as np
 from typing import List
+import sys
 
 # pip install sqlite-utils mutagen
 from sqlite_utils import Database
@@ -14,7 +15,14 @@ from pathlib import Path
 import hashlib, time
 
 # EchoCharlie Modules 
-from echo_frame import GetFrame
+try:
+    from .echo_frame import GetFrame
+except ImportError:
+    # Add the current directory to the Python path so we can import sibling modules
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    from echo_frame import GetFrame
 
 class EchoDB(): 
 

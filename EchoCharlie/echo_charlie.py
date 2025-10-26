@@ -1,13 +1,30 @@
 import json
 import numpy as np
 from typing import List
+import sys
+import os
 
-from echo_frame import GetFrame
-from echo_vsr import VSRInferencePipeline
-from echo_qwen import QwenModel
-from echo_db import EchoDB
-from echo_embed import Embed
-from echo_higgs import HiggsModel
+try:
+    # Relative imports for when used as a package (e.g., from notebooks, other scripts)
+    from .echo_frame import GetFrame
+    from .echo_vsr import VSRInferencePipeline
+    from .echo_qwen import QwenModel
+    from .echo_db import EchoDB
+    from .echo_embed import Embed
+    from .echo_higgs import HiggsModel
+except ImportError:
+    # Absolute imports for when run as a script directly
+    # Add the current directory to the Python path so we can import sibling modules
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    
+    from echo_frame import GetFrame
+    from echo_vsr import VSRInferencePipeline
+    from echo_qwen import QwenModel
+    from echo_db import EchoDB
+    from echo_embed import Embed
+    from echo_higgs import HiggsModel
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -29,7 +46,7 @@ class EchoCharlie():
         self.VSR = VSRInferencePipeline()
         self.Qwen = QwenModel(qwen_api_key)
         self.HiggsModel = HiggsModel(higgs_api_key)
-        self.echo_db = EchoDB(db_path="./demo_db_3", collection_name = "demo_collection_3", audio_db_name = "demo_audio_3.db")
+        self.echo_db = EchoDB(db_path="./demo_db_4", collection_name = "demo_collection_4", audio_db_name = "demo_audio_4.db")
         self.Embed = Embed(emb_dim)
         
         
@@ -75,12 +92,12 @@ class EchoCharlie():
         return self.video, audio_path
         
 def test():
-    api_key=""
-    v_pth = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/obama_3_one_word_error.mp4"
-    transc = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/transcripts/transcript.json"
+    api_key="bai-2Cf0fqjMBPVF6iwNd0PNwp7DVAQFqQgmGbu1iEa_JahdDUoJ"
+    v_pth = "/Users/itaykozlov/Projects/echo-charlie/data/videos/trudeau_3.mp4" #"../data/videos/obama_3_one_word_error.mp4"
+    transc = "../data/transcripts/transcript.json"
     ec = EchoCharlie(video_path=v_pth,transcripts=transc,qwen_api_key=api_key,higgs_api_key=api_key)
-    out = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/audio/output_sample3.wav"
-    refs = ["/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/trump_ref.mp4","/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/trudeau_ref.mp4","/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/macron_ref.mp4","/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/obama_ref.mp4"]
+    out = "../data/audio/output_sample3.wav"
+    refs = ["../data/videos/trump_ref.mp4","../data/videos/trudeau_ref.mp4","../data/videos/macron_ref.mp4","../data/videos/obama_ref.mp4"]
     v, a = ec.forward(out,refs)
 
 if __name__ == "__main__":

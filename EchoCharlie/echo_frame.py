@@ -45,7 +45,9 @@ class GetFrame:
 
     def extract_audio(self,video_path, output_path):
         audio_fl = video_path.split("/")[-1].split(".")[0]
-        output_file = output_path+audio_fl+".wav"
+
+        os.makedirs(output_path, exist_ok=True) # Make dir if doesn't exist
+        output_file = f"{output_path}/{audio_fl}.wav"
         
         # Use moviepy to extract audio
         video = VideoFileClip(video_path)

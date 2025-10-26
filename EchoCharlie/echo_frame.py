@@ -2,7 +2,17 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from moviepy import VideoFileClip
-from echo_embed import Embed
+import sys
+import os
+
+try:
+    from .echo_embed import Embed
+except ImportError:
+    # Add the current directory to the Python path so we can import sibling modules
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    from echo_embed import Embed
 
 class GetFrame:
     def __init__(self, n_frames=1, emb_dim=128):
@@ -35,7 +45,9 @@ class GetFrame:
 
     def extract_audio(self,video_path, output_path):
         audio_fl = video_path.split("/")[-1].split(".")[0]
-        output_file = output_path+audio_fl+".wav"
+
+        os.makedirs(output_path, exist_ok=True) # Make dir if doesn't exist
+        output_file = f"{output_path}/{audio_fl}.wav"
         
         # Use moviepy to extract audio
         video = VideoFileClip(video_path)

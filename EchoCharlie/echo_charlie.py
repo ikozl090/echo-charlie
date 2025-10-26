@@ -1,13 +1,30 @@
 import json
 import numpy as np
 from typing import List
+import sys
+import os
 
-from echo_frame import GetFrame
-from echo_vsr import VSRInferencePipeline
-from echo_qwen import QwenModel
-from echo_db import EchoDB
-from echo_embed import Embed
-from echo_higgs import HiggsModel
+try:
+    # Relative imports for when used as a package (e.g., from notebooks, other scripts)
+    from .echo_frame import GetFrame
+    from .echo_vsr import VSRInferencePipeline
+    from .echo_qwen import QwenModel
+    from .echo_db import EchoDB
+    from .echo_embed import Embed
+    from .echo_higgs import HiggsModel
+except ImportError:
+    # Absolute imports for when run as a script directly
+    # Add the current directory to the Python path so we can import sibling modules
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    
+    from echo_frame import GetFrame
+    from echo_vsr import VSRInferencePipeline
+    from echo_qwen import QwenModel
+    from echo_db import EchoDB
+    from echo_embed import Embed
+    from echo_higgs import HiggsModel
 import warnings
 from pathlib import Path
 warnings.filterwarnings("ignore")
@@ -30,7 +47,7 @@ class EchoCharlie():
         self.VSR = VSRInferencePipeline()
         self.Qwen = QwenModel(qwen_api_key)
         self.HiggsModel = HiggsModel(higgs_api_key)
-        self.echo_db = EchoDB(db_path="./demo_db_3", collection_name = "demo_collection_3", audio_db_name = "demo_audio_3.db")
+        self.echo_db = EchoDB()
         self.Embed = Embed(emb_dim)
         
         
@@ -56,8 +73,9 @@ class EchoCharlie():
         ref_embedding, _ = self.get_frames(ref_video)
         return ref_embedding
     
-    def forward(self,out_path:str,references:List[str]):
-        self.store_frames(references)
+    def forward(self,out_path:str,references:List[str]=None):
+        if references is not None:
+            self.store_frames(references)
         ref_emb = self.get_emb()
         ref_audio_dict = self.get_audio(ref_emb)[0][0]
         ref_audio = ref_audio_dict["path"]
@@ -75,7 +93,9 @@ class EchoCharlie():
         audio_path = self.HiggsModel.higgs_out(ref_audio,ref_transcript,main_transcript,out_path)
         
         return self.video, audio_path
-        
+
+
+
 def test():
     api_key = "bai-Diz6JrS6rquzG1HSby-07fYX0AEgNJrCXKx0n6qr8F06ACSz"
     repo_root = Path(__file__).resolve().parents[1]

@@ -9,3 +9,9 @@ wheels/
 # Virtual environments
 .venv
 /models
+
+# DB Folder 
+echo_db
+
+# API Keys 
+config.json

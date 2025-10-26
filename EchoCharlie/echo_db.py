@@ -6,6 +6,7 @@ import os
 import pickle
 import numpy as np
 from typing import List
+import sys
 
 # pip install sqlite-utils mutagen
 from sqlite_utils import Database
@@ -14,23 +15,40 @@ from pathlib import Path
 import hashlib, time
 
 # EchoCharlie Modules 
-from echo_frame import GetFrame
+try:
+    from .echo_frame import GetFrame
+except ImportError:
+    # Add the current directory to the Python path so we can import sibling modules
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    from echo_frame import GetFrame
 
 class EchoDB(): 
 
     vdb_collection: Collection = None
     audio_db: Database = None 
 
-    def __init__(self, db_path: str = "./echo_db", collection_name: str = "echo_collection", audio_db_name: str = "audio.db"): 
+    def __init__(
+        self, 
+        db_path: str = "./echo_db", 
+        collection_name: str = "echo_collection", 
+        audio_db_name: str = "audio.db", 
+        embedding_db_name: str = "chromo_db", 
+        audio_file_dir_name: str = "records"): 
         super(EchoDB,self).__init__()
         # Initialize chromodb 
-        client = chromadb.PersistentClient(path=db_path) 
+        self.embedding_db_path = f"{db_path}/{embedding_db_name}"
+        client = chromadb.PersistentClient(path=self.embedding_db_path) 
         self.vdb_collection = client.get_or_create_collection(name=collection_name)
 
         # Initialize Audio DB - use absolute path to ensure consistency
-        self.audio_db_path = os.path.abspath(audio_db_name)
+        self.audio_db_path = os.path.abspath(f"{db_path}/{audio_db_name}")
         print(f"DEBUG: Initializing database at: {self.audio_db_path}")
         self.audio_db = Database(self.audio_db_path)
+
+        # Initialize audio file storage dir 
+        self.audio_file_dir = f"{db_path}/{audio_file_dir_name}"
 
         # Create tables once (idempotent)
         self.audio_db["files"].create({
@@ -45,10 +63,69 @@ class EchoDB():
 
         self.audio_db["tags"].create({"key": str, "tag": str}, pk=("key","tag"), if_not_exists=True)
 
-    def push_video(self, video_path, n_frames: int = 1, audio_file_dir: str = 'audio_from_video'):
+    def clear_db(self): 
+        """
+        Clear all data from both the vector database and audio database.
+        This removes all embeddings from ChromaDB and all file records from SQLite.
+        """
+        try:
+            # Clear vector database (ChromaDB)
+            print("🗑️  Clearing vector database...")
+            # Get all existing IDs first
+            existing_data = self.vdb_collection.get()
+            if existing_data['ids']:
+                print(f"  Removing {len(existing_data['ids'])} embeddings from vector database")
+                self.vdb_collection.delete(ids=existing_data['ids'])
+                print("  ✓ Vector database cleared")
+            else:
+                print("  ✓ Vector database already empty")
+            
+            # Clear audio database (SQLite)
+            print("🗑️  Clearing audio database...")
+            
+            # Count existing records before deletion
+            files_count = self.audio_db["files"].count
+            tags_count = self.audio_db["tags"].count
+            
+            if files_count > 0 or tags_count > 0:
+                print(f"  Removing {files_count} file records and {tags_count} tag records")
+
+                # Clear physical files 
+                # Get all file records first, then iterate
+                all_files = list(self.audio_db["files"].rows)
+                for file in all_files:
+                    file_path = file["path"]
+                    if os.path.exists(file_path):
+                        try:
+                            os.remove(file_path)
+                            print(f"    Deleted file: {file_path}")
+                        except Exception as e:
+                            print(f"    Failed to delete file {file_path}: {e}")
+                    else:
+                        print(f"    File not found, skipping: {file_path}")
+                
+                # Clear tags table first (due to foreign key constraints)
+                self.audio_db["tags"].delete_where()
+                
+                # Clear files table
+                self.audio_db["files"].delete_where()
+                
+                print("  ✓ Audio database cleared")
+            else:
+                print("  ✓ Audio database already empty")
+                
+            print("🎉 Database clearing completed successfully!")
+            
+        except Exception as e:
+            print(f"❌ Error clearing database: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    def push_video(self, video_path, n_frames: int = 1):
         gf = GetFrame(n_frames = n_frames)
 
-        embeddings, audio_path, key = gf.forward(video_path, out_audio_path = audio_file_dir)
+        embeddings, audio_path, key = gf.forward(video_path, out_audio_path = self.audio_file_dir)
         
         self.add_embeddings(embeddings = embeddings, keys = [key for k in embeddings])
         self.index_audio(path = audio_path, key = key)
@@ -58,9 +135,12 @@ class EchoDB():
         keys = self.query_vdb(embeddings) 
         results = []
         for key_list in keys: 
-            key = self.__choose_key(key_list)
-            result = self.query_audio(key = key)
-            results.append(result)
+            if key_list:
+                key = self.__choose_key(key_list)
+                result = self.query_audio(key = key)
+                results.append(result)
+            else: 
+                print(f"‼️ No keys found!")
 
         return results
 
@@ -103,11 +183,6 @@ class EchoDB():
         embeddings, embedding_files, metadatas = self.load_embedding_dir(embedding_dir = embedding_dir, file_type = file_type)
 
         self.add_embeddings(embeddings = embeddings, keys = embedding_files, metadatas = metadatas)
-        # self.vdb_collection.add(
-        #     ids=embedding_files,
-        #     embeddings=embeddings,
-        #     metadatas=metadatas
-        # )
 
     def query_vdb(self, embeddings: List[np.array]): 
         results = self.vdb_collection.query(
@@ -173,6 +248,10 @@ class EchoDB():
             # Debug: print what we're trying to insert
             print(f"DEBUG: Inserting file data: {file_data}")
             
+            # Close any existing connections from sqlite-utils to avoid database lock
+            if hasattr(self.audio_db, 'conn') and self.audio_db.conn:
+                self.audio_db.conn.close()
+            
             # Insert the file using raw SQL to ensure it works
             import sqlite3
             conn = sqlite3.connect(self.audio_db_path)
@@ -197,6 +276,9 @@ class EchoDB():
             cursor.execute("SELECT COUNT(*) FROM files WHERE key = ?", (key,))
             count = cursor.fetchone()[0]
             conn.close()
+            
+            # Reopen sqlite-utils connection for future operations
+            self.audio_db = Database(self.audio_db_path)
             
             print(f"✓ Inserted file: {key}")
             print(f"DEBUG: Files with key '{key}': {count}")

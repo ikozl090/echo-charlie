@@ -5,6 +5,8 @@ video into a fully voiced clip. The system retrieves reference audio from an
 indexed library, cleans up the lip-reading transcript, and then generates
 new speech that matches the target speaker.
 
+![Demo Video](/Users/poojaravi/Downloads/hackathon.mp4)
+
 ## Highlights
 - Retrieval-augmented voice cloning using `EchoCharlie.echo_db.EchoDB`
 - Visual speech recognition (lip reading) via `EchoCharlie.echo_vsr`

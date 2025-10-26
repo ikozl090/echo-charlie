@@ -45,13 +45,14 @@ class EchoDB():
 
         self.audio_db["tags"].create({"key": str, "tag": str}, pk=("key","tag"), if_not_exists=True)
 
-    def push_video(self, video_path, n_frames: int = 3, audio_file_dir: str = 'audio_from_video'):
+    def push_video(self, video_path, n_frames: int = 1, audio_file_dir: str = 'audio_from_video'):
         gf = GetFrame(n_frames = n_frames)
 
         embeddings, audio_path, key = gf.forward(video_path, out_audio_path = audio_file_dir)
         
         self.add_embeddings(embeddings = embeddings, keys = [key for k in embeddings])
         self.index_audio(path = audio_path, key = key)
+        return embeddings
 
     def get_audio_from_embedding(self, embeddings: List[np.array]): 
         keys = self.query_vdb(embeddings) 

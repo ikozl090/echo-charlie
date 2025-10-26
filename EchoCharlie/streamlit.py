@@ -123,3 +123,6 @@ if st.button("Generate Audio"):
     #_, aud = echo_charlie.forward(out_path=out)
     st.audio(main_path+"generated_audio/"+person, format="audio/wav")
     
+if st.button("Generate Video"):
+    person_vid = path.split("/")[-1].split(".")[0] + "_unmuted.mp4"
+    st.video(main_path+"generated_videos/"+person_vid)

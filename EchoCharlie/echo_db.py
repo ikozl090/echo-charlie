@@ -14,7 +14,7 @@ from pathlib import Path
 import hashlib, time
 
 # EchoCharlie Modules 
-from .echo_frame import GetFrame
+from echo_frame import GetFrame
 
 class EchoDB(): 
 
@@ -22,7 +22,7 @@ class EchoDB():
     audio_db: Database = None 
 
     def __init__(self, db_path: str = "./echo_db", collection_name: str = "echo_collection", audio_db_name: str = "audio.db"): 
-
+        super(EchoDB,self).__init__()
         # Initialize chromodb 
         client = chromadb.PersistentClient(path=db_path) 
         self.vdb_collection = client.get_or_create_collection(name=collection_name)
@@ -52,7 +52,7 @@ class EchoDB():
         
         self.add_embeddings(embeddings = embeddings, keys = [key for k in embeddings])
         self.index_audio(path = audio_path, key = key)
-        return embeddings
+        
 
     def get_audio_from_embedding(self, embeddings: List[np.array]): 
         keys = self.query_vdb(embeddings) 

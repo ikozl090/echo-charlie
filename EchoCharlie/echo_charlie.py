@@ -8,7 +8,8 @@ from echo_qwen import QwenModel
 from echo_db import EchoDB
 from echo_embed import Embed
 from echo_higgs import HiggsModel
-
+import warnings
+warnings.filterwarnings("ignore")
 
 class EchoCharlie(): 
 
@@ -28,13 +29,20 @@ class EchoCharlie():
         self.VSR = VSRInferencePipeline()
         self.Qwen = QwenModel(qwen_api_key)
         self.HiggsModel = HiggsModel(higgs_api_key)
+        self.echo_db = EchoDB(db_path="./demo_db_3", collection_name = "demo_collection_3", audio_db_name = "demo_audio_3.db")
+        self.Embed = Embed(emb_dim)
         
-    def store_frames(self):
-        emb = EchoDB.push_video(self.video_path)
+        
+    def store_frames(self,refs:List):
+        for ref in refs:
+            self.echo_db.push_video(video_path=ref)
+        
+    def get_emb(self):
+        emb,_,_ = self.GetFrame.forward(self.video)
         return emb
         
     def get_audio(self,embeddings:List[np.array]):
-        return EchoDB.get_audio_from_embedding(embeddings)
+        return self.echo_db.get_audio_from_embedding(embeddings)
     
     def vsr(self):
         vsr_text = self.VSR.forward(self.video)
@@ -45,32 +53,35 @@ class EchoCharlie():
         ref_embedding, _ = self.get_frames(ref_video)
         return ref_embedding
     
-    def forward(self,out_path:str):
-        ref_emb = self.store_frames()
-        ref_audio_dict = self.get_audio(ref_emb)
+    def forward(self,out_path:str,references:List[str]):
+        self.store_frames(references)
+        ref_emb = self.get_emb()
+        ref_audio_dict = self.get_audio(ref_emb)[0][0]
         ref_audio = ref_audio_dict["path"]
         
         ref_transcript_key = ref_audio_dict["key"]
         with open(self.transcripts,"rb") as fl:
             transcripts = json.load(fl)
-            
+        print(ref_transcript_key, ref_audio)
         for videos in transcripts:
-            if videos["video"] == ref_transcript_key:
+            if videos["video"] == ref_transcript_key+".mp4":
                 ref_transcript = videos["transcript"]
         
         main_transcript = self.vsr()
+        print(f"{main_transcript}")
+        
         audio_path = self.HiggsModel.higgs_out(ref_audio,ref_transcript,main_transcript,out_path)
         
         return self.video, audio_path
         
-    
 def test():
     api_key=""
     v_pth = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/obama_3_one_word_error.mp4"
     transc = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/transcripts/transcript.json"
     ec = EchoCharlie(video_path=v_pth,transcripts=transc,qwen_api_key=api_key,higgs_api_key=api_key)
-    out = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/audio/output_sample.wav"
-    v, a = ec.forward(out)
+    out = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/audio/output_sample3.wav"
+    refs = ["/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/trump_ref.mp4","/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/trudeau_ref.mp4","/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/macron_ref.mp4","/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/obama_ref.mp4"]
+    v, a = ec.forward(out,refs)
 
 if __name__ == "__main__":
     test()

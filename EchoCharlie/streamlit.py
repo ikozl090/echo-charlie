@@ -25,27 +25,27 @@ with col3:
 
 # --- Display different responses depending on which image was clicked ---
 choice = st.session_state.get("choice", None)
-
+path = ""
 if choice == "img1":
     #st.write(" video.")
-    path_1 = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/macron_1.mp4"
-    st.video(path_1)
+    path = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/macron_1.mp4"
+    st.video(path)
 
 elif choice == "img2":
-    path_2 = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/obama_1_one_word_error.mp4"
-    st.video(path_2)
+    path = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/obama_1_one_word_error.mp4"
+    st.video(path)
 
 elif choice == "img3":
     #st.subheader("You clicked Image 3!")
     #st.write("Response for Image 3: You could run another model or show predictions.")
-    path_3 = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/trudeau_1.mp4"
-    st.video(path_3)
+    path = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/trudeau_1.mp4"
+    st.video(path)
 
 else:
     st.info("👆 Click one of the image buttons above to see the output.")
 
 
 if st.button("Generate Audio"):
-    get_path = 
+    get_path = path
     st.audio("/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/audio/output_trump.wav", format="audio/wav")
     

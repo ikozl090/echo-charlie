@@ -90,23 +90,23 @@ choice = st.session_state.get("choice", None)
 path = ""
 if choice == "img1":
     #st.write(" video.")
-    path = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/trudeau_3.mp4"
+    path = main_path + "muted_videos/trudeau_3.mp4"
     st.video(path,muted=True)
 
 elif choice == "img2":
-    path = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/obama_3_one_word_error.mp4"
+    path = main_path + "muted_videos/obama_3_one_word_error.mp4"
     st.video(path,muted=True)
 
 elif choice == "img3":
     #st.subheader("You clicked Image 3!")
     #st.write("Response for Image 3: You could run another model or show predictions.")
-    path = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/macron_1.mp4"
+    path = main_path + "muted_videos/macron_1.mp4"
     st.video(path,muted=True)
     
 elif choice == "img4":
     #st.subheader("You clicked Image 3!")
     #st.write("Response for Image 3: You could run another model or show predictions.")
-    path = main_path + "videos/trump_1.mp4"
+    path = main_path + "muted_videos/trump_1.mp4"
     st.video(path,muted=True)
 
 else:
@@ -121,5 +121,5 @@ if st.button("Generate Audio"):
     transcripts = main_path + "transcripts/transcript.json"
     #echo_charlie = EchoCharlie(video_path=path,transcripts=transcripts,qwen_api_key=api_key,higgs_api_key=api_key)
     #_, aud = echo_charlie.forward(out_path=out)
-    st.audio(main_path+person, format="audio/wav")
+    st.audio(main_path+"generated_audio/"+person, format="audio/wav")
     

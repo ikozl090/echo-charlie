@@ -9,6 +9,7 @@ from echo_db import EchoDB
 from echo_embed import Embed
 from echo_higgs import HiggsModel
 import warnings
+from pathlib import Path
 warnings.filterwarnings("ignore")
 
 class EchoCharlie(): 
@@ -46,7 +47,9 @@ class EchoCharlie():
     
     def vsr(self):
         vsr_text = self.VSR.forward(self.video)
+        print(f"DEBUG: VSR Text: {vsr_text}")
         cleaned_text = self.Qwen.qwen_out(vsr_text)
+        print(f"DEBUG: Cleaned Text: {cleaned_text}")
         return cleaned_text
     
     def retrieve_video(self,ref_video:str):
@@ -68,20 +71,22 @@ class EchoCharlie():
                 ref_transcript = videos["transcript"]
         
         main_transcript = self.vsr()
-        print(f"{main_transcript}")
         
         audio_path = self.HiggsModel.higgs_out(ref_audio,ref_transcript,main_transcript,out_path)
         
         return self.video, audio_path
         
 def test():
-    api_key=""
-    v_pth = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/obama_3_one_word_error.mp4"
-    transc = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/transcripts/transcript.json"
-    ec = EchoCharlie(video_path=v_pth,transcripts=transc,qwen_api_key=api_key,higgs_api_key=api_key)
-    out = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/audio/output_sample3.wav"
-    refs = ["/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/trump_ref.mp4","/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/trudeau_ref.mp4","/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/macron_ref.mp4","/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/videos/obama_ref.mp4"]
-    v, a = ec.forward(out,refs)
+    api_key = "bai-Diz6JrS6rquzG1HSby-07fYX0AEgNJrCXKx0n6qr8F06ACSz"
+    repo_root = Path(__file__).resolve().parents[1]
+    target_filename = "trump_1_muted"
+    v_pth = repo_root / "data" / "videos_muted" / f"{target_filename}.mp4"
+    transc = repo_root / "data" / "transcripts" / "transcript.json"
+    ec = EchoCharlie(video_path=str(v_pth), transcripts=str(transc), qwen_api_key=api_key, higgs_api_key=api_key)
+    out = repo_root / "data" / "audio" / f"{target_filename}.wav"
+    videos_dir = repo_root / "data" / "videos"
+    refs = sorted(str(p) for p in videos_dir.glob("*ref*.mp4"))
+    v, a = ec.forward(str(out), refs)
 
 if __name__ == "__main__":
     test()

@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from moviepy import VideoFileClip
-from .echo_embed import Embed
+from echo_embed import Embed
 
 class GetFrame:
     def __init__(self, n_frames=1, emb_dim=128):

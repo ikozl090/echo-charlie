@@ -173,7 +173,7 @@ Pooja Ravi
 Itay Kozlov
 
 <p align="center">
-<img src = "https://avatars.githubusercontent.com/u/40311799?v=4"  height="120" alt="Aneri Gandhi">
+<img src = "https://avatars.githubusercontent.com/u/110578288?v=4"  height="120" alt="Aneri Gandhi">
 </p>
 <p align="center">
 <a href = "https://github.com/ikozl090"><img src = "http://www.iconninja.com/files/241/825/211/round-collaboration-social-github-code-circle-network-icon.svg" width="36" height = "36"/></a>
@@ -188,7 +188,7 @@ Itay Kozlov
 Vishnou Vinayagame
 
 <p align="center">
-<img src = "https://avatars.githubusercontent.com/u/63657533?v=4"  height="120" alt="Aneri Gandhi">
+<img src = "https://avatars.githubusercontent.com/u/106386360?v=4"  height="120" alt="Aneri Gandhi">
 </p>
 <p align="center">
 <a href = "https://github.com/vishnouvina"><img src = "http://www.iconninja.com/files/241/825/211/round-collaboration-social-github-code-circle-network-icon.svg" width="36" height = "36"/></a>

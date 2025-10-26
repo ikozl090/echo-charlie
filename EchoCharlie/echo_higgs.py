@@ -23,12 +23,12 @@ class HiggsModel:
     def b64(self,path):
         return base64.b64encode(open(path, "rb").read()).decode("utf-8")
 
-    def higgs_out(self,ref_audio,ref_transcript,out_transcript,output_path):
+    def higgs_out(self,ref_audio,ref_transcript,out_transcript,output_path,prompt="Audio is from a politician giving an energetic speech without pauses."):
         
         system = (
             "You are an AI assistant designed to convert text into speech.\n"
             "If the user's message includes a [SPEAKER*] tag, do not read out the tag and generate speech for the following text, using the specified voice.\n"
-            "<|scene_desc_start|>\nAudio is from a politician giving an energetic speech without pauses.\n<|scene_desc_end|>"
+            "<|scene_desc_start|>\n"+str(prompt)+"\n<|scene_desc_end|>"
         )
 
         resp = self.client.chat.completions.create(

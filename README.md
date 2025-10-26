@@ -5,7 +5,7 @@ video into a fully voiced clip. The system retrieves reference audio from an
 indexed library, cleans up the lip-reading transcript, and then generates
 new speech that matches the target speaker.
 
-[![Demo Video](GitHub/echo-charlie/data/submission/flow.jpeg)](GitHub/echo-charlie/data/submission/hackathon_video.mp4)
+[![Demo Video](data/submission/flow.jpeg)](data/submission/hackathon_video.mp4)
 
 ## Highlights
 - Retrieval-augmented voice cloning using `EchoCharlie.echo_db.EchoDB`

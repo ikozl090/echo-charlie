@@ -8,7 +8,7 @@ st.title("CharlieYaplin")
 st.write("Hello from Itay, Pooja and Vishnou!")
 
 echo_db = EchoDB(db_path="./demo_db_3", collection_name = "demo_collection_3", audio_db_name = "demo_audio_3.db")
-main_path = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/"
+main_path = "data/"
 
 
 st.subheader("Add reference videos to Database:")
@@ -116,7 +116,7 @@ else:
 if st.button("Generate Audio"):
     get_path = path
     person = path.split("/")[-1].split(".")[0] + "_generated.wav"
-    api_key = "bai-KexSTrjlCNGM_ZhBteIErVDK9saJ8NbbHsRInNm5YTIF4b4L"
+    api_key = ""
     out = main_path + "audio/output_sample3.wav"
     transcripts = main_path + "transcripts/transcript.json"
     #echo_charlie = EchoCharlie(video_path=path,transcripts=transcripts,qwen_api_key=api_key,higgs_api_key=api_key)

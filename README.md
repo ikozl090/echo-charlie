@@ -121,6 +121,9 @@ print(f"Generated speech saved to {audio}")
 The reference videos will be added to the vector and audio databases on the
 first run. Subsequent runs reuse the stored embeddings and metadata.
 
+The generated audio can then be passed to 👉 [**Wav2Lip**](https://github.com/vishnouvina/wav2lip-hq-updated-ESRGAN) with a simple call to the ```inference.py``` file to generate the corrected and enhanced video.
+
+
 ## Managing the Reference Database
 - Use `EchoCharlie.echo_db.EchoDB.push_video` to ingest additional videos.
 - Call `EchoDB.clear_db()` during development to wipe both ChromaDB and the

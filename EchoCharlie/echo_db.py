@@ -2,7 +2,7 @@ import chromadb
 from chromadb import Collection
 
 import numpy as np
-import os 
+import os
 import pickle
 import numpy as np
 from typing import List
@@ -12,9 +12,10 @@ import sys
 from sqlite_utils import Database
 from mutagen import File as MutagenFile  # optional, to read tags/duration
 from pathlib import Path
-import hashlib, time
+import hashlib
+import time
 
-# EchoCharlie Modules 
+# EchoCharlie Modules
 try:
     from .echo_frame import GetFrame
 except ImportError:
@@ -24,22 +25,23 @@ except ImportError:
         sys.path.insert(0, current_dir)
     from echo_frame import GetFrame
 
-class EchoDB(): 
 
+class EchoDB:
     vdb_collection: Collection = None
-    audio_db: Database = None 
+    audio_db: Database = None
 
     def __init__(
-        self, 
-        db_path: str = "./echo_db", 
-        collection_name: str = "echo_collection", 
-        audio_db_name: str = "audio.db", 
-        embedding_db_name: str = "chromo_db", 
-        audio_file_dir_name: str = "records"): 
-        super(EchoDB,self).__init__()
-        # Initialize chromodb 
+        self,
+        db_path: str = "./echo_db",
+        collection_name: str = "echo_collection",
+        audio_db_name: str = "audio.db",
+        embedding_db_name: str = "chromo_db",
+        audio_file_dir_name: str = "records",
+    ):
+        super(EchoDB, self).__init__()
+        # Initialize chromodb
         self.embedding_db_path = f"{db_path}/{embedding_db_name}"
-        client = chromadb.PersistentClient(path=self.embedding_db_path) 
+        client = chromadb.PersistentClient(path=self.embedding_db_path)
         self.vdb_collection = client.get_or_create_collection(name=collection_name)
 
         # Initialize Audio DB - use absolute path to ensure consistency
@@ -47,23 +49,30 @@ class EchoDB():
         print(f"DEBUG: Initializing database at: {self.audio_db_path}")
         self.audio_db = Database(self.audio_db_path)
 
-        # Initialize audio file storage dir 
+        # Initialize audio file storage dir
         self.audio_file_dir = f"{db_path}/{audio_file_dir_name}"
 
         # Create tables once (idempotent)
-        self.audio_db["files"].create({
-            "key": str,
-            "path": str,
-            "duration": float,
-            "samplerate": int,
-            "channels": int,
-            "md5": str,
-            "created_at": float
-        }, pk="key", not_null={"key","path"}, if_not_exists=True)
+        self.audio_db["files"].create(
+            {
+                "key": str,
+                "path": str,
+                "duration": float,
+                "samplerate": int,
+                "channels": int,
+                "md5": str,
+                "created_at": float,
+            },
+            pk="key",
+            not_null={"key", "path"},
+            if_not_exists=True,
+        )
 
-        self.audio_db["tags"].create({"key": str, "tag": str}, pk=("key","tag"), if_not_exists=True)
+        self.audio_db["tags"].create(
+            {"key": str, "tag": str}, pk=("key", "tag"), if_not_exists=True
+        )
 
-    def clear_db(self): 
+    def clear_db(self):
         """
         Clear all data from both the vector database and audio database.
         This removes all embeddings from ChromaDB and all file records from SQLite.
@@ -73,24 +82,28 @@ class EchoDB():
             print("🗑️  Clearing vector database...")
             # Get all existing IDs first
             existing_data = self.vdb_collection.get()
-            if existing_data['ids']:
-                print(f"  Removing {len(existing_data['ids'])} embeddings from vector database")
-                self.vdb_collection.delete(ids=existing_data['ids'])
+            if existing_data["ids"]:
+                print(
+                    f"  Removing {len(existing_data['ids'])} embeddings from vector database"
+                )
+                self.vdb_collection.delete(ids=existing_data["ids"])
                 print("  ✓ Vector database cleared")
             else:
                 print("  ✓ Vector database already empty")
-            
+
             # Clear audio database (SQLite)
             print("🗑️  Clearing audio database...")
-            
+
             # Count existing records before deletion
             files_count = self.audio_db["files"].count
             tags_count = self.audio_db["tags"].count
-            
-            if files_count > 0 or tags_count > 0:
-                print(f"  Removing {files_count} file records and {tags_count} tag records")
 
-                # Clear physical files 
+            if files_count > 0 or tags_count > 0:
+                print(
+                    f"  Removing {files_count} file records and {tags_count} tag records"
+                )
+
+                # Clear physical files
                 # Get all file records first, then iterate
                 all_files = list(self.audio_db["files"].rows)
                 for file in all_files:
@@ -103,101 +116,109 @@ class EchoDB():
                             print(f"    Failed to delete file {file_path}: {e}")
                     else:
                         print(f"    File not found, skipping: {file_path}")
-                
+
                 # Clear tags table first (due to foreign key constraints)
                 self.audio_db["tags"].delete_where()
-                
+
                 # Clear files table
                 self.audio_db["files"].delete_where()
-                
+
                 print("  ✓ Audio database cleared")
             else:
                 print("  ✓ Audio database already empty")
-                
+
             print("🎉 Database clearing completed successfully!")
-            
+
         except Exception as e:
             print(f"❌ Error clearing database: {e}")
             import traceback
+
             traceback.print_exc()
             raise
 
     def push_video(self, video_path, n_frames: int = 1):
-        gf = GetFrame(n_frames = n_frames)
+        gf = GetFrame(n_frames=n_frames)
 
-        embeddings, audio_path, key = gf.forward(video_path, out_audio_path = self.audio_file_dir)
-        
-        self.add_embeddings(embeddings = embeddings, keys = [key for k in embeddings])
-        self.index_audio(path = audio_path, key = key)
-        
+        embeddings, audio_path, key = gf.forward(
+            video_path, out_audio_path=self.audio_file_dir
+        )
 
-    def get_audio_from_embedding(self, embeddings: List[np.array]): 
-        keys = self.query_vdb(embeddings) 
+        self.add_embeddings(embeddings=embeddings, keys=[key for k in embeddings])
+        self.index_audio(path=audio_path, key=key)
+
+    def get_audio_from_embedding(self, embeddings: List[np.array]):
+        keys = self.query_vdb(embeddings)
         results = []
-        for key_list in keys: 
+        for key_list in keys:
             if key_list:
                 key = self.__choose_key(key_list)
-                result = self.query_audio(key = key)
+                result = self.query_audio(key=key)
                 results.append(result)
-            else: 
+            else:
                 print(f"‼️ No keys found!")
 
         return results
 
-    def __choose_key(self, keys: List[str]): 
+    def __choose_key(self, keys: List[str]):
         return keys[0]
 
-    def load_embedding_dir(self, embedding_dir: str, file_type: str = 'pkl'): 
+    def load_embedding_dir(self, embedding_dir: str, file_type: str = "pkl"):
         # NOTE: Only supports pickle files right now
-        assert file_type == 'pkl'
+        assert file_type == "pkl"
 
-        embedding_files = [os.path.splitext(f)[0] for f in os.listdir(embedding_dir) if os.path.isfile(os.path.join(embedding_dir, f)) and f.endswith('.pkl')]
+        embedding_files = [
+            os.path.splitext(f)[0]
+            for f in os.listdir(embedding_dir)
+            if os.path.isfile(os.path.join(embedding_dir, f)) and f.endswith(".pkl")
+        ]
 
-        # Load data 
+        # Load data
         embeddings = []
         for embedding_file in embedding_files:
-            with open(f"{embedding_dir}/{embedding_file}.{file_type}", 'rb') as file: 
+            with open(f"{embedding_dir}/{embedding_file}.{file_type}", "rb") as file:
                 embedding = pickle.load(file)
 
             embeddings.append(np.array(embedding))
 
-        metadatas = [{"filename": f"{embedding_file}.png"} for embedding_file in embedding_files]
+        metadatas = [
+            {"filename": f"{embedding_file}.png"} for embedding_file in embedding_files
+        ]
 
-        return embeddings, embedding_files, metadatas 
+        return embeddings, embedding_files, metadatas
 
-    def add_embeddings(self, embeddings: List[np.array], keys: List[str], metadatas: List[dict] = None): 
-        if metadatas: 
+    def add_embeddings(
+        self, embeddings: List[np.array], keys: List[str], metadatas: List[dict] = None
+    ):
+        if metadatas:
+            self.vdb_collection.add(
+                ids=keys, embeddings=embeddings, metadatas=metadatas
+            )
+        else:
             self.vdb_collection.add(
                 ids=keys,
                 embeddings=embeddings,
-                metadatas=metadatas
-            )
-        else: 
-            self.vdb_collection.add(
-                ids=keys,
-                embeddings=embeddings,
             )
 
-    def add_embedding_dir(self, embedding_dir: str, file_type: str = 'pkl'): 
-
-        embeddings, embedding_files, metadatas = self.load_embedding_dir(embedding_dir = embedding_dir, file_type = file_type)
-
-        self.add_embeddings(embeddings = embeddings, keys = embedding_files, metadatas = metadatas)
-
-    def query_vdb(self, embeddings: List[np.array]): 
-        results = self.vdb_collection.query(
-            query_embeddings=embeddings,
-            n_results=3
+    def add_embedding_dir(self, embedding_dir: str, file_type: str = "pkl"):
+        embeddings, embedding_files, metadatas = self.load_embedding_dir(
+            embedding_dir=embedding_dir, file_type=file_type
         )
 
-        ids = results['ids']
+        self.add_embeddings(
+            embeddings=embeddings, keys=embedding_files, metadatas=metadatas
+        )
+
+    def query_vdb(self, embeddings: List[np.array]):
+        results = self.vdb_collection.query(query_embeddings=embeddings, n_results=3)
+
+        ids = results["ids"]
 
         return ids
 
-    def md5sum(self, p: Path, chunk=1<<20):
+    def md5sum(self, p: Path, chunk=1 << 20):
         h = hashlib.md5()
         with p.open("rb") as f:
-            while (b := f.read(chunk)):
+            while b := f.read(chunk):
                 h.update(b)
         return h.hexdigest()
 
@@ -207,26 +228,33 @@ class EchoDB():
             p = Path(path)
             if not p.exists():
                 raise FileNotFoundError(f"Audio file not found: {path}")
-            
+
             # Read audio metadata using mutagen first, fallback to scipy
             duration = None
             sr = None
             ch = None
-            
+
             try:
                 m = MutagenFile(path)
                 if m and m.info:
-                    duration = float(m.info.length) if hasattr(m.info, 'length') else None
-                    sr = int(m.info.sample_rate) if hasattr(m.info, 'sample_rate') else None
-                    ch = int(m.info.channels) if hasattr(m.info, 'channels') else None
+                    duration = (
+                        float(m.info.length) if hasattr(m.info, "length") else None
+                    )
+                    sr = (
+                        int(m.info.sample_rate)
+                        if hasattr(m.info, "sample_rate")
+                        else None
+                    )
+                    ch = int(m.info.channels) if hasattr(m.info, "channels") else None
             except:
                 pass
-            
+
             # Fallback: try scipy for WAV files
             if sr is None or duration is None:
                 try:
                     import wave
-                    with wave.open(str(p), 'rb') as wav_file:
+
+                    with wave.open(str(p), "rb") as wav_file:
                         sr = wav_file.getframerate()
                         ch = wav_file.getnchannels()
                         frames = wav_file.getnframes()
@@ -244,54 +272,59 @@ class EchoDB():
                 "md5": self.md5sum(p),
                 "created_at": time.time(),
             }
-            
+
             # Debug: print what we're trying to insert
             print(f"DEBUG: Inserting file data: {file_data}")
-            
+
             # Close any existing connections from sqlite-utils to avoid database lock
-            if hasattr(self.audio_db, 'conn') and self.audio_db.conn:
+            if hasattr(self.audio_db, "conn") and self.audio_db.conn:
                 self.audio_db.conn.close()
-            
+
             # Insert the file using raw SQL to ensure it works
             import sqlite3
+
             conn = sqlite3.connect(self.audio_db_path)
             cursor = conn.cursor()
-            
+
             # Use INSERT OR REPLACE to match upsert behavior
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO files (key, path, duration, samplerate, channels, md5, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                file_data['key'],
-                file_data['path'],
-                file_data['duration'],
-                file_data['samplerate'],
-                file_data['channels'],
-                file_data['md5'],
-                file_data['created_at']
-            ))
+            """,
+                (
+                    file_data["key"],
+                    file_data["path"],
+                    file_data["duration"],
+                    file_data["samplerate"],
+                    file_data["channels"],
+                    file_data["md5"],
+                    file_data["created_at"],
+                ),
+            )
             conn.commit()
-            
+
             # Verify it was inserted
             cursor.execute("SELECT COUNT(*) FROM files WHERE key = ?", (key,))
             count = cursor.fetchone()[0]
             conn.close()
-            
+
             # Reopen sqlite-utils connection for future operations
             self.audio_db = Database(self.audio_db_path)
-            
+
             print(f"✓ Inserted file: {key}")
             print(f"DEBUG: Files with key '{key}': {count}")
 
             # Insert tags
             for t in tags:
-                self.audio_db["tags"].upsert({"key": key, "tag": t}, pk=("key","tag"))
+                self.audio_db["tags"].upsert({"key": key, "tag": t}, pk=("key", "tag"))
             if tags:
                 print(f"✓ Inserted {len(tags)} tags for {key}")
-            
+
         except Exception as e:
             print(f"Error in index_audio: {e}")
             import traceback
+
             traceback.print_exc()
             raise
 
@@ -299,14 +332,14 @@ class EchoDB():
         """Display all content from the audio database."""
         print("\n📊 Audio Database Contents\n")
         print(f"  Database path: {self.audio_db_path}")
-        
+
         # Get all files
         all_files = list(self.audio_db["files"].rows)
-        
+
         if not all_files:
             print("  No audio files in database.")
             return
-        
+
         # Display each file with its tags
         for file_row in all_files:
             key = file_row["key"]
@@ -315,7 +348,7 @@ class EchoDB():
             samplerate = file_row["samplerate"]
             channels = file_row["channels"]
             md5 = file_row["md5"]
-            
+
             print(f"  Key: {key}")
             print(f"  Path: {path}")
             if duration:
@@ -325,7 +358,7 @@ class EchoDB():
             if channels:
                 print(f"  Channels: {channels}")
             print(f"  MD5: {md5}")
-            
+
             # Get tags for this file
             tags = list(self.audio_db["tags"].rows_where("key = ?", [key]))
             if tags:
@@ -333,10 +366,9 @@ class EchoDB():
                 print(f"  Tags: {', '.join(tag_list)}")
             else:
                 print(f"  Tags: (none)")
-            
+
             print()
 
-        
     # ---- Query wrapper ----
     def query_audio(self, key=None, tag=None, min_duration=None, max_duration=None):
         """Flexible query interface for the audio DB."""
@@ -360,7 +392,3 @@ class EchoDB():
         sql = f"SELECT DISTINCT files.* FROM files {join} {where} ORDER BY created_at DESC"
 
         return list(self.audio_db.query(sql, params))
-
-        
-
-    

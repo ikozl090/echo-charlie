@@ -99,12 +99,11 @@ def test():
     with open("config.json", "r") as config_file:
         config = json.load(config_file)
     api_key = config.get("api_key", "")
-
-    v_pth = "data/videos/trudeau_3.mp4" #"data/videos/obama_3_one_word_error.mp4"
+    v_pth = "data/videos/tom.mp4" #"data/videos/obama_3_one_word_error.mp4"
     transc = "data/transcripts/transcript.json"
     ec = EchoCharlie(video_path=v_pth,transcripts=transc,qwen_api_key=api_key,higgs_api_key=api_key)
-    out = "data/audio/output_sample3.wav"
-    refs = ["data/videos/trump_ref.mp4","data/videos/trudeau_ref.mp4","data/videos/macron_ref.mp4","data/videos/obama_ref.mp4"]
+    out = "data/audio/tom_generated.wav"
+    refs = ["data/videos/tom_ref.mp4"]
     v, a = ec.forward(out,refs)
 
 if __name__ == "__main__":

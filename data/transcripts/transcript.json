@@ -62,5 +62,21 @@
     {
         "video": "zendaya_ref.mp4",
         "transcript": "My character is supposed to be a tennis pro, and clearly, I'm not giving tennis pro."
+    },
+    {
+        "video": "tom.mp4",
+        "transcript": "Probably physical touch and words of affirmation — I like both of those things; those are important to me."
+    },
+    {
+        "video": "zendaya.mp4",
+        "transcript": "For some reason, I stopped, and I was like, 'Wait a minute, why did I? I was watching that' and then I don't know if I got busy or something, but I fell off. So I pre-watched it until the beginning."
+    },
+    {
+        "video": "feifei.mp4",
+        "transcript": "It's not just algorithms. It's really the problem of generalization. And the problem of generalization is actually a combination of the capacity of the model as well as the data the model uses."
+    },
+    {
+        "video": "feifei_ref.mp4",
+        "transcript": "So the talk today I'm gonna share with you is about visual intelligence, and the title is: From seeing to doing, ascending the ladder of visual intelligence."
     }
 ]

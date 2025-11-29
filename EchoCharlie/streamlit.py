@@ -113,7 +113,7 @@ else:
 if st.button("Generate Audio"):
     get_path = path
     person = path.split("/")[-1].split(".")[0] + "_generated.wav"
-    api_key = "bai-KexSTrjlCNGM_ZhBteIErVDK9saJ8NbbHsRInNm5YTIF4b4L"
+    
     out = main_path + "audio/output_sample3.wav"
     transcripts = main_path + "transcripts/transcript.json"
     #echo_charlie = EchoCharlie(video_path=path,transcripts=transcripts,qwen_api_key=api_key,higgs_api_key=api_key)
@@ -123,12 +123,12 @@ if st.button("Generate Audio"):
     
 if st.button("Generate Video"):
     person_vid = path.split("/")[-1].split(".")[0] + "_unmuted.mp4"
-    st.video(main_path+"generated_videos/"+person_vid)
-    
-if st.button("Generated vs. Reference Audio"):
-    person_plot = path.split("/")[-1].split(".")[0] + "_plot.png"
-    st.image(main_path+"plots/"+person_plot,caption="Audio Comparison Visualization")
+    st.video(main_path+"generated_video_with_subtitles/"+person_vid)
 
 if st.button("Original Video"):
     person_vid = path.split("/")[-1].split(".")[0] + ".mp4"
     st.video(main_path+"videos/"+person_vid)
+    
+if st.button("Generated vs. Reference Audio"):
+    person_plot = path.split("/")[-1].split(".")[0] + "_plot.png"
+    st.image(main_path+"plots/"+person_plot,caption="Audio Comparison Visualization")

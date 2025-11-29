@@ -8,7 +8,7 @@ st.title("CharlieYaplin")
 st.write("Hello from Itay, Pooja and Vishnou! <3")
 
 echo_db = EchoDB(db_path="./demo_db_3", collection_name = "demo_collection_3", audio_db_name = "demo_audio_3.db")
-main_path = "/data/"
+main_path = "/Users/poojaravi/Documents/code/GitHub/echo-charlie/data/"
 
 
 st.subheader("Add reference videos to Database:")
@@ -123,12 +123,12 @@ if st.button("Generate Audio"):
     
 if st.button("Generate Video"):
     person_vid = path.split("/")[-1].split(".")[0] + "_unmuted.mp4"
-    st.video(main_path+"generated_videos/"+person_vid)
-    
-if st.button("Generated vs. Reference Audio"):
-    person_plot = path.split("/")[-1].split(".")[0] + "_plot.png"
-    st.image(main_path+"plots/"+person_plot,caption="Audio Comparison Visualization")
+    st.video(main_path+"generated_video_with_subtitles/"+person_vid)
 
 if st.button("Original Video"):
     person_vid = path.split("/")[-1].split(".")[0] + ".mp4"
     st.video(main_path+"videos/"+person_vid)
+    
+if st.button("Generated vs. Reference Audio"):
+    person_plot = path.split("/")[-1].split(".")[0] + "_plot.png"
+    st.image(main_path+"plots/"+person_plot,caption="Audio Comparison Visualization")

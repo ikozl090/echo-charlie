@@ -123,7 +123,7 @@ if st.button("Generate Audio"):
     
 if st.button("Generate Video"):
     person_vid = path.split("/")[-1].split(".")[0] + "_unmuted.mp4"
-    st.video(main_path+"generated_video_with_subtitles/"+person_vid)
+    st.video(main_path+"generated_videos_with_subtitles/"+person_vid)
 
 if st.button("Original Video"):
     person_vid = path.split("/")[-1].split(".")[0] + ".mp4"
@@ -132,3 +132,17 @@ if st.button("Original Video"):
 if st.button("Generated vs. Reference Audio"):
     person_plot = path.split("/")[-1].split(".")[0] + "_plot.png"
     st.image(main_path+"plots/"+person_plot,caption="Audio Comparison Visualization")
+    
+
+
+if st.button("Metrics"):
+    st.write("Word Error Rate: 6.44%")
+    st.write("Average Model Word Error Rate: 19.10%")
+    st.write("95% Confidence Interval: [1.28, 13.58]")
+    st.write("Latency for a 10s video, current pipeline")
+    st.write("AVSR: ~11–12 s")
+    st.write("Emotion Recognition: ~0.7 s")
+    st.write("Transcript Cleanup: ~0.7 s (in parallel)")
+    st.write("TTS Generation: ~2 s")
+    st.write("Lip-Sync (Wav2Lip): ~3 min 30 s")
+    st.write("Total End-to-End Latency: ~3 min 40 s")
